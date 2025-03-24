@@ -1,0 +1,79 @@
+function writeFile(fileEntry, dataObj, successCallback) {
+    // Create a FileWriter object for our FileEntry (log.txt).
+    fileEntry.createWriter(function (fileWriter) {
+        fileWriter.onwriteend = function(e) {
+            // alert("Successful file write...");//+JSON.stringify(fileEntry) );
+            if (successCallback) {
+                successCallback(fileEntry.nativeURL);
+            }
+            if (dataObj.type == "image/png") {
+                readBinaryFile(fileEntry);
+            } else {
+                readFile(fileEntry);
+            }
+        };
+
+        fileWriter.onerror = function (e) {
+            alert("Failed file write: " + e.toString());
+        };
+
+        // If data object is not passed in,
+        // create a new Blob instead.
+        if (!dataObj) {
+            dataObj = new Blob(['some file data'], { type: 'text/plain' });
+        }
+
+        fileWriter.write(dataObj);
+    });
+}
+
+function dataURItoBlob(dataURI) {
+    // convert base64/URLEncoded data component to raw binary data held in a string
+    var byteString;
+    if (dataURI.split(',')[0].indexOf('base64') >= 0)
+        byteString = atob(dataURI.split(',')[1]);
+    else
+        byteString = unescape(dataURI.split(',')[1]);
+
+    // separate out the mime component
+    var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+
+    // write the bytes of the string to a typed array
+    var ia = new Uint8Array(byteString.length);
+    for (var i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+    }
+
+    return new Blob([ia], {type:mimeString});
+}
+function readBinaryFile(fileEntry) {
+
+    fileEntry.file(function (file) {
+        var reader = new FileReader();
+
+        reader.onloadend = function() {
+
+            console.log("Successful file write: " + this.result);
+            displayFileData(fileEntry.fullPath + ": " + this.result);
+
+            var blob = new Blob([new Uint8Array(this.result)], { type: "image/png" });
+            displayImage(blob);
+        };
+
+        reader.readAsArrayBuffer(file);
+
+    }, onErrorReadFile);
+}
+
+function displayImage(blob) {
+
+    // Displays image if result is a valid DOM string for an image.
+    var elem = document.getElementById('imageFile');
+    // Note: Use window.URL.revokeObjectURL when finished with image.
+    elem.src = window.URL.createObjectURL(blob);
+}
+
+//create folder
+function createDirectory(rootDirEntry, newFolder) {
+    rootDirEntry.getDirectory(newFolder, { create: true } );
+}
