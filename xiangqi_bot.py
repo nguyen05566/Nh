@@ -15,11 +15,18 @@ import subprocess
 import requests
 import re
 
-# Fix import path for pikafish_terminal
-sys.path.insert(0, '/home/z/.local/lib/python3.13/site-packages')
+# Fix import path for pikafish_terminal (local venv, if present)
+_venv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'venv', 'lib')
+for _py_ver in ['python3.12', 'python3.13', 'python3.11']:
+    _candidate = os.path.join(_venv_path, _py_ver, 'site-packages')
+    if os.path.isdir(_candidate):
+        sys.path.insert(0, _candidate)
+        break
 
 # ==================== CẤU HÌNH ====================
-COOKIE = (
+# Đọc cookie từ biến môi trường (cho GitHub Actions) hoặc dùng giá trị mặc định
+COOKIE = os.environ.get(
+    'GAMEVH_COOKIE',
     "_ga=GA1.2.1074447710.1773877026; "
     "memberName=4F0D0D2A316B7A164DB2A42CF7CF85FE; "
     "memberPassword=E71A8D5F227140577E4376EA88F92797; "
@@ -31,11 +38,12 @@ COOKIE = (
 WS_URL = "wss://gamevh.net/ws/gameServer"
 
 # Thông tin tài khoản (sẽ tự động refresh)
-CURRENT_PLAYER_NICKNAME = "nguyen05522"
-CURRENT_PLAYER_ID = 65692738
+CURRENT_PLAYER_NICKNAME = os.environ.get('GAMEVH_NICKNAME', 'nguyen05522')
+CURRENT_PLAYER_ID = int(os.environ.get('GAMEVH_PLAYER_ID', '65692738'))
 TOKEN = 0  # Will be auto-fetched
-GAME_ID = "xiangqi"
-PLACE_PATH = "Lobby.xiangqi.0"
+GAME_ID = os.environ.get('GAMEVH_GAME_ID', 'xiangqi')
+PLACE_PATH = os.environ.get('GAMEVH_PLACE_PATH', 'Lobby.xiangqi.0')
+BOT_DEPTH = int(os.environ.get('BOT_DEPTH', '15'))
 
 
 def fetch_session_info():
@@ -1305,7 +1313,7 @@ class PikafishBot:
 
 # ==================== CHẠY BOT ====================
 if __name__ == "__main__":
-    bot = PikafishBot(depth=15)
+    bot = PikafishBot(depth=BOT_DEPTH)
     
     def signal_handler(sig, frame):
         print("\n[SIGNAL] Nhận tín hiệu dừng...")
