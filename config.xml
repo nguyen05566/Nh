@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8'?>
+<widget id="com.kyhoang.caro" version="1.0.0" xmlns="http://www.w3.org/ns/widgets">
+    <name>Caro Pro Ky Hoang</name>
+    <description>Ưng dụng Cờ Caro Pro phiên bản Android</description>
+    <author email="nganbui05566@gmail.com">Ky Hoang</author>
+    <content src="index.html" />
+    <access origin="*" />
+    <preference name="Orientation" value="portrait" />
+    <preference name="FullScreen" value="true" />
+</widget>
