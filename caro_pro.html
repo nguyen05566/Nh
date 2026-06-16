@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-select=none">
+    <title>Caro Pro - Ky Hoang</title>
+    <style>
+        :root { --p1: #e74c3c; --p2: #3498db; --bg: #1a1a1d; --cell: #2c2c2e; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); display: flex; flex-direction: column; align-items: center; margin: 0; color: white; touch-action: manipulation; }
+        header { margin: 20px 0; text-align: center; }
+        #status { margin-bottom: 20px; font-size: 1.2rem; font-weight: bold; padding: 10px 20px; border-radius: 10px; background: rgba(255,255,255,0.1); }
+        #board { display: grid; grid-template-columns: repeat(15, 1fr); gap: 1px; background: #444; border: 3px solid #555; width: 95vw; height: 95vw; max-width: 550px; max-height: 550px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .cell { background: var(--cell); display: flex; align-items: center; justify-content: center; font-size: 6vw; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        @media(min-width: 550px) { .cell { font-size: 30px; } }
+        .cell:active { background: #3a3a3c; }
+        .x { color: var(--p1); }
+        .o { color: var(--p2); }
+        .win { background: #2ecc71 !important; color: white !important; }
+        .controls { display: flex; gap: 10px; margin: 20px; }
+        button { padding: 12px 25px; border-radius: 8px; border: none; background: #e74c3c; color: white; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px #c0392b; }
+        button:active { box-shadow: 0 0; transform: translateY(4px); }
+        button.reset { background: #3498db; box-shadow: 0 4px #2980b9; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Caro Pro</h1>
+        <div id="status">Lượt đi: <span class="x">X</span></div>
+    </header>
+    <div id="board"></div>
+    <div class="controls">
+        <button class="reset" onclick="reset()">Chơi ván mới</button>
+    </div>
+
+    <script>
+        const size = 15;
+        let turn = 'X', isOver = false, data = Array(size * size).fill(null);
+        const boardEl = document.getElementById('board');
+        const statEl = document.getElementById('status');
+
+        function init() {
+            boardEl.innerHTML = '';
+            for (let i = 0; i < size * size; i++) {
+                let c = document.createElement('div');
+                c.className = 'cell';
+                c.onclick = () => handleMove(i);
+                boardEl.appendChild(c);
+            }
+        }
+
+        function handleMove(i) {
+            if (isOver || data[i]) return;
+            data[i] = turn;
+            const cell = boardEl.children[i];
+            cell.innerText = turn;
+            cell.classList.add(turn.toLowerCase());
+            
+            if (checkWin(i)) {
+                isOver = true;
+                statEl.style.background = '#2ecc71';
+                statEl.innerText = 'CHIẾN THẮNG: ' + turn;
+                return;
+            }
+            
+            turn = (turn === 'X') ? 'O' : 'X';
+            statEl.innerHTML = 'Lượt đi: <span class="' + turn.toLowerCase() + '">' + turn + '</span>';
+        }
+
+        function checkWin(i) {
+            const r = Math.floor(i / size), c = i % size;
+            const directions = [[0, 1], [1, 0], [1, 1], [1, -1]];
+            for (let [dr, dc] of directions) {
+                let line = [i], count = 1;
+                for (let step of [1, -1]) {
+                    let nr = r, nc = c;
+                    while (true) {
+                        nr += dr * step; nc += dc * step;
+                        let ni = nr * size + nc;
+                        if (nr < 0 || nr >= size || nc < 0 || nc >= size || data[ni] !== turn) break;
+                        line.push(ni); count++;
+                    }
+                }
+                if (count >= 5) {
+                    line.forEach(idx => boardEl.children[idx].classList.add('win'));
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function reset() {
+            data.fill(null); turn = 'X'; isOver = false;
+            statEl.style.background = 'rgba(255,255,255,0.1)';
+            statEl.innerHTML = 'Lượt đi: <span class="x">X</span>';
+            init();
+        }
+        init();
+    </script>
+</body>
+</html>
