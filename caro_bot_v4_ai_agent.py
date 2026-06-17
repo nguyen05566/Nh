@@ -58,7 +58,7 @@ HCOUNT = 15
 VCOUNT = 19
 
 # Thoi gian chay bot (15 phut)
-BOT_RUNTIME_MINUTES = 15
+BOT_RUNTIME_MINUTES = 150
 BOT_RUNTIME_SECONDS = BOT_RUNTIME_MINUTES * 60
 
 # Duong dan luu kinh nghiem
@@ -384,14 +384,14 @@ PATTERN_HALF_TWO = 'HALF_TWO'
 BASE_PATTERN_SCORES = {
     PATTERN_FIVE_OPEN: 10000000,
     PATTERN_OVERLINE: 10000000,
-    PATTERN_FIVE_BLOCKED: 50,
+    PATTERN_FIVE_BLOCKED: 10000000, 
     PATTERN_OPEN_FOUR: 5000000,
     PATTERN_DOUBLE_FOUR: 5000000,
     PATTERN_HALF_FOUR: 500000,
-    PATTERN_OPEN_THREE: 500000,
+    PATTERN_OPEN_THREE: 800000, 
     PATTERN_HALF_THREE: 50000,
     PATTERN_BROKEN_THREE: 80000,
-    PATTERN_OPEN_TWO: 50000,
+    PATTERN_OPEN_TWO: 100000, 
     PATTERN_HALF_TWO: 5000,
 }
 
@@ -603,7 +603,9 @@ class SelfLearningEngine:
             'opponent_profiles': {},   # opponent_name -> {style, patterns_seen, results}
             'move_history': [],        # Lich su cac van dau
             'total_games': 0,
-            'adaptation_rate': 0.05,   # Ty le hoc (5% thay doi moi van)
+            'adaptation_rate': 0.08,   # Tang toc do hoc
+            'loss_streak': 0,          # Theo doi chuoi thua
+            'aggressive_mode': False,
         }
         self.current_game_moves = []   # Nuoc di cua van hien tai
         self.current_game_patterns = defaultdict(int)  # Pattern xuat hien trong van
@@ -701,8 +703,10 @@ class SelfLearningEngine:
             profile['games'] += 1
             if result == 'win':
                 profile['wins'] += 1
+                self.experience['loss_streak'] = 0
             elif result == 'lose':
                 profile['losses'] += 1
+                self.experience['loss_streak'] += 1
             # Du doan phong cach choi
             opp_moves = [m for m in self.current_game_moves if not m['is_my_move']]
             if opp_moves:
@@ -997,9 +1001,7 @@ class CaroAI:
                         break
                 else:
                     break
-            if count >= 6:
-                return True
-            if count == 5 and (forward_open or backward_open):
+            if count >= 5: 
                 return True
         return False
 
@@ -1050,7 +1052,9 @@ class CaroAI:
         for pat_type, cnt in defense_patterns.items():
             pat_score = PATTERN_SCORES.get(pat_type, 0)
             # Chien thuat doi pho: tan cong thih defense thap hon, phong thu thi defense cao hon
-            defense_mult = 0.95 if self.counter_style != 'defensive' else 1.1
+            # Tu hoc: Neu dang thua nhieu, tu dong nang cao phong thu
+            base_def = 1.2 if self.learning.experience.get('loss_streak', 0) > 2 else 1.0
+            defense_mult = base_def if self.counter_style != 'defensive' else base_def + 0.2
             score += int(pat_score * defense_mult) * cnt
         cx, cy = board.hcount // 2, board.vcount // 2
         dist = abs(x - cx) + abs(y - cy)
