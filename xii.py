@@ -44,7 +44,7 @@ CURRENT_PLAYER_ID = int(os.environ.get('GAMEVH_PLAYER_ID', '65692738'))
 TOKEN = 0 
 GAME_ID = os.environ.get('GAMEVH_GAME_ID', 'xiangqi')
 PLACE_PATH = os.environ.get('GAMEVH_PLACE_PATH', 'Lobby.xiangqi.0')
-BOT_DEPTH = int(os.environ.get('BOT_DEPTH', '13'))
+BOT_DEPTH = int(os.environ.get('BOT_DEPTH', '20'))
 
 def fetch_session_info():
     global COOKIE, TOKEN, CURRENT_PLAYER_NICKNAME, CURRENT_PLAYER_ID
