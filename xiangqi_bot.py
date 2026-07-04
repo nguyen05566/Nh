@@ -321,15 +321,27 @@ class PikafishBot:
             ls = msg.read_byte(); lt = msg.read_byte()
             ftsid = msg.read_byte(); msid = msg.read_byte()
             print(f"[GAME] firstTurn={ftsid}, mySlot={msid}, remain={msg.remaining()}")
-            if msg.remaining() > 0: print(f"[GAME] Raw: {msg.data[msg.offset:msg.offset+20].hex()}")
-            if msid < 0 and self.board.my_slot_id >= 0: msid = self.board.my_slot_id; print(f"[GAME] ⚠️ Using known slot={msid}")
+            
+            # Khắc phục lỗi gán nhầm hoặc mất thông tin SlotID của Bot
+            if msid < 0 and self.board.my_slot_id >= 0: 
+                msid = self.board.my_slot_id
+                print(f"[GAME] ⚠️ Using known slot={msid}")
+            else:
+                self.board.my_slot_id = msid
+
             self.board.set_my_slot(msid, ftsid)
             fen = self._build_fen_from_pieces(bp, ftsid)
             self.board.fen = fen; self.board.move_history = []
             cn = "ĐỎ" if self.board.is_red else "ĐEN"
             print(f"[GAME] Slot {msid}, first={ftsid} → {cn}"); print(f"[GAME] FEN: {fen}")
-            if msid == ftsid: self.board.is_my_turn = True; print("[GAME] 🎯 My turn! Thinking..."); self._make_auto_move()
-            else: self.board.is_my_turn = False; print("[GAME] Opponent's turn...")
+            
+            if msid == ftsid: 
+                self.board.is_my_turn = True
+                print("[GAME] 🎯 My turn! Thinking...")
+                threading.Thread(target=self._make_auto_move, daemon=True).start()
+            else: 
+                self.board.is_my_turn = False
+                print("[GAME] Opponent's turn...")
         except Exception as e: print(f"[GAME] ❌ START_MATCH error: {e}"); import traceback; traceback.print_exc()
     def _build_fen_from_pieces(self, pieces, ftsid):
         board = [['.' for _ in range(9)] for _ in range(10)]
@@ -360,9 +372,9 @@ class PikafishBot:
             print(f"[MOVE] 🏃 {sp}->{tp} = {em}"); print(f"[MOVE] History: {' '.join(self.board.move_history[-6:])}")
             try: cnt = msg.read_byte(); 
             except: pass
-            irt = (len(self.board.move_history) % 2 == 0); imt = (irt == self.board.is_red)
-            if imt and self.board.is_playing: self.board.is_my_turn = True; print("[MOVE] 🎯 My turn! Thinking..."); time.sleep(0.5); self._make_auto_move()
-            else: self.board.is_my_turn = False; print("[MOVE] Waiting opponent...")
+            
+            # Loại bỏ hoàn toàn logic tính imt dựa theo length của mảng tại đây 
+            # để loại trừ trường hợp lag dẫn tới lệch chỉ số nước đi (khiến BOT treo).
         except Exception as e: print(f"[MOVE] ❌ Error: {e}"); import traceback; traceback.print_exc()
     def _handle_play_response(self, msg):
         try:
@@ -380,12 +392,23 @@ class PikafishBot:
         try:
             sid = msg.read_byte(); tt = msg.read_short()
             if sid == -2: print(f"[TURN] Countdown: {tt}"); return
-            pr = msg.read_short(); imt = (sid == self.board.my_slot_id); self.board.is_my_turn = imt
+            pr = msg.read_short()
+            
+            # Gán lượt đi đồng bộ tuyệt đối từ Server phản hồi
+            imt = (sid == self.board.my_slot_id)
+            self.board.is_my_turn = imt
             ts = "🎯 MY TURN" if imt else f"Opponent (slot={sid})"
             print(f"[TURN] ⏱️ {ts}, timeout={tt}s, remain={pr}s")
+            
+            if imt and self.board.is_playing:
+                print("[TURN] 🧠 Triggering auto move from SET_TURN...")
+                threading.Thread(target=self._make_auto_move, daemon=True).start()
         except Exception as e: print(f"[TURN] ❌ Read error: {e}")
     def _handle_gameover(self, msg):
-        print("[GAME] 🏁 Game over!"); self.board.is_playing = False; self.in_game = False; self.board.is_my_turn = False
+        print("[GAME] 🏁 Game over!")
+        if not self.board.is_playing: return # Tránh lặp trạng thái gameover liên tục
+        
+        self.board.is_playing = False; self.in_game = False; self.board.is_my_turn = False
         try:
             cnt = msg.read_byte()
             for i in range(cnt):
@@ -394,7 +417,15 @@ class PikafishBot:
                 if is_me: print(f"[GAME] Result: {r} (earn={ev})")
             mr = msg.read_string(); print(f"[GAME] Detail: {mr}")
         except Exception as e: print(f"[GAME] Gameover read error: {e}")
-        print("[GAME] Finding new match in 5s..."); time.sleep(5); self.send_quick_play()
+        
+        # Đẩy logic tìm trận mới vào Thread chạy ngầm tránh làm treo kết nối WS chính
+        def delay_next_match():
+            print("[GAME] Finding new match in 5s...")
+            time.sleep(5)
+            if not self.in_game and self.connected:
+                self.send_quick_play()
+        threading.Thread(target=delay_next_match, daemon=True).start()
+
     def _handle_enter_state(self, msg):
         try: print(f"[STATE] State: {msg.read_byte()}")
         except: pass
