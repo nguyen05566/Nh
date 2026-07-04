@@ -4,6 +4,7 @@ Xiangqi Bot - gamevh.net - GitHub Actions Edition
 Tự động lấy token, chạy 24/7 với auto-reconnect
 Tích hợp Logic: Tự động né khi vào bàn của đối thủ gài cờ (Blacklist) khi chưa bắt đầu trận.
 Auto-search bàn: Tự động tìm bàn liên tục khi ở ngoài sảnh.
+Pikafish: Cấu hình Threads + Hash Table để tối ưu hiệu suất.
 """
 
 import struct
@@ -33,6 +34,10 @@ GAME_ID = os.environ.get('GAMEVH_GAME_ID', 'xiangqi')
 PLACE_PATH = os.environ.get('GAMEVH_PLACE_PATH', 'Lobby.xiangqi.0')
 BOT_DEPTH = int(os.environ.get('BOT_DEPTH', '20'))
 AUTO_SEARCH_INTERVAL = int(os.environ.get('AUTO_SEARCH_INTERVAL', '3'))  # Tìm bàn mỗi 3s khi ở sảnh
+
+# ========== CẤU HÌNH PIKAFISH ==========
+PIKAFISH_THREADS = int(os.environ.get('PIKAFISH_THREADS', '4'))  # Số luồng engine (mặc định 4)
+PIKAFISH_HASH_MB = int(os.environ.get('PIKAFISH_HASH_MB', '256'))  # Hash table size (MB) (mặc định 256MB)
 
 WS_URL = "wss://gamevh.net/ws/gameServer"
 TOKEN = 0
@@ -168,12 +173,50 @@ class PikafishBot:
         try:
             from pikafish_terminal.engine import PikafishEngine
             from pikafish_terminal.difficulty import create_custom_difficulty
-            self.engine = PikafishEngine(difficulty=create_custom_difficulty(depth=self.depth))
-            self.engine.new_game(); self._engine_mode = 'pikafish_terminal'
-            print(f"[ENGINE] ✅ Pikafish terminal (depth={self.depth})"); return
+            
+            # Tạo custom difficulty với cấu hình threads và hash
+            difficulty = create_custom_difficulty(
+                depth=self.depth,
+                threads=PIKAFISH_THREADS,
+                hash_mb=PIKAFISH_HASH_MB
+            )
+            self.engine = PikafishEngine(difficulty=difficulty)
+            self.engine.new_game()
+            self._engine_mode = 'pikafish_terminal'
+            
+            print(f"[ENGINE] ✅ Pikafish terminal initialized")
+            print(f"[ENGINE]    Depth: {self.depth}")
+            print(f"[ENGINE]    Threads: {PIKAFISH_THREADS}")
+            print(f"[ENGINE]    Hash: {PIKAFISH_HASH_MB}MB")
+            return
+        except TypeError:
+            # Nếu pikafish_terminal không hỗ trợ threads/hash_mb, thử cách khác
+            try:
+                from pikafish_terminal.engine import PikafishEngine
+                from pikafish_terminal.difficulty import create_custom_difficulty
+                
+                difficulty = create_custom_difficulty(depth=self.depth)
+                self.engine = PikafishEngine(difficulty=difficulty)
+                self.engine.new_game()
+                self._engine_mode = 'pikafish_terminal'
+                
+                # Cố gắng cấu hình engine sau khi tạo
+                try:
+                    self.engine.setoption("Threads", str(PIKAFISH_THREADS))
+                    self.engine.setoption("Hash", str(PIKAFISH_HASH_MB))
+                except:
+                    pass
+                
+                print(f"[ENGINE] ✅ Pikafish terminal (depth={self.depth})")
+                print(f"[ENGINE]    Threads: {PIKAFISH_THREADS}")
+                print(f"[ENGINE]    Hash: {PIKAFISH_HASH_MB}MB")
+                return
+            except Exception as e2:
+                print(f"[ENGINE] ⚠️ pikafish-terminal (fallback): {e2}")
         except Exception as e:
             print(f"[ENGINE] ⚠️ pikafish-terminal: {e}")
-            print("[ENGINE] ❌ Không có engine nào khả dụng!")
+        
+        print("[ENGINE] ❌ Không có engine nào khả dụng!")
 
     def _load_blacklist(self):
         self.blacklist = set()
