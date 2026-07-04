@@ -29,7 +29,7 @@ NICKNAME = os.environ.get('GAMEVH_NICKNAME', 'nguyen05522')
 PLAYER_ID = int(os.environ.get('GAMEVH_PLAYER_ID', '65692738'))
 GAME_ID = os.environ.get('GAMEVH_GAME_ID', 'xiangqi')
 PLACE_PATH = os.environ.get('GAMEVH_PLACE_PATH', 'Lobby.xiangqi.0')
-BOT_DEPTH = int(os.environ.get('BOT_DEPTH', '15'))
+BOT_DEPTH = int(os.environ.get('BOT_DEPTH', '20'))
 
 WS_URL = "wss://gamevh.net/ws/gameServer"
 TOKEN = 0
