@@ -1,9 +1,12 @@
-name: Run Xiangqi Bot (3 Hours)
+name: Run Xiangqi Bot (3 Hours) - DISABLED
 on:
+  # workflow_dispatch:  # DISABLED - BOT has been stopped
   workflow_dispatch:
+    # This trigger is disabled. To re-enable, remove the comment above.
 
 jobs:
   run-bot:
+    if: false  # This job will never run
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
