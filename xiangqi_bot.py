@@ -2,6 +2,7 @@
 """
 Xiangqi Bot - gamevh.net - GitHub Actions Edition
 Tự động lấy token, chạy 24/7 với auto-reconnect
+Tích hợp Logic: Tự động né khi vào bàn của đối thủ gài cờ (Blacklist) khi chưa bắt đầu trận.
 """
 
 import struct
@@ -33,6 +34,7 @@ BOT_DEPTH = int(os.environ.get('BOT_DEPTH', '20'))
 
 WS_URL = "wss://gamevh.net/ws/gameServer"
 TOKEN = 0
+BLACKLIST_FILE = "blacklist.txt"
 
 # Session state (mutable dict để tránh global declaration issue)
 _SESSION_STATE = {'cookie': COOKIE, 'nickname': NICKNAME}
@@ -153,7 +155,11 @@ class PikafishBot:
         self.engine = None; self.depth = depth; self.ws = None
         self.connected = False; self.logged_in = False; self.in_game = False
         self._engine_mode = None
+        self.table_players = {}  # {slot_id: nickname}
+        self.table_master_slot = -1  # Lưu ID ghế của chủ bàn hiện tại
         self._init_engine()
+        self._load_blacklist()
+
     def _init_engine(self):
         try:
             from pikafish_terminal.engine import PikafishEngine
@@ -164,6 +170,51 @@ class PikafishBot:
         except Exception as e:
             print(f"[ENGINE] ⚠️ pikafish-terminal: {e}")
             print("[ENGINE] ❌ Không có engine nào khả dụng!")
+
+    def _load_blacklist(self):
+        self.blacklist = set()
+        if os.path.exists(BLACKLIST_FILE):
+            try:
+                with open(BLACKLIST_FILE, "r", encoding="utf-8") as f:
+                    for line in f:
+                        name = line.strip()
+                        if name: self.blacklist.add(name)
+                print(f"[BLACKLIST] Đã tải {len(self.blacklist)} đối thủ gài thế cờ từng thắng BOT.")
+            except Exception as e:
+                print(f"[BLACKLIST] Lỗi đọc file: {e}")
+        else:
+            with open(BLACKLIST_FILE, "w", encoding="utf-8") as f: pass
+
+    def _add_to_blacklist(self, nickname):
+        if nickname and nickname != NICKNAME and nickname not in self.blacklist:
+            self.blacklist.add(nickname)
+            try:
+                with open(BLACKLIST_FILE, "a", encoding="utf-8") as f:
+                    f.write(nickname + "\n")
+                print(f"[BLACKLIST] 🛑 Đã thêm '{nickname}' vào danh sách đen do nghi vấn gài thế cờ.")
+            except Exception as e:
+                print(f"[BLACKLIST] Lỗi ghi file: {e}")
+
+    def _check_and_escape_blacklist(self):
+        """Logic kiểm tra Blacklist thông minh theo yêu cầu của bạn"""
+        # Điều kiện 1: Nếu trận đấu đang chơi rồi thì CỨ CHƠI TIẾP, KHÔNG THOÁT
+        if self.board.is_playing:
+            return False
+            
+        # Điều kiện 2: Nếu BOT đang là CHỦ BÀN thì KHÔNG THOÁT (vì đối thủ vào bàn mình không gài thế cờ lỗi được)
+        if self.board.my_slot_id == self.table_master_slot and self.board.my_slot_id != -1:
+            return False
+
+        # Điều kiện 3: Trận chưa bắt đầu + Mình là khách + Gặp người trong danh sách đen làm chủ bàn -> THOÁT NGAY
+        for sid, name in self.table_players.items():
+            if name in self.blacklist:
+                # Đảm bảo người thuộc blacklist này chính là CHỦ BÀN gài thế cờ
+                if sid == self.table_master_slot:
+                    print(f"[BLACKLIST] 🚨 Né gài thế cờ! Chủ bàn '{name}' nằm trong danh sách đen. Đang tự động rời bàn...")
+                    self.send_surrender() # Thoát bàn
+                    return True
+        return False
+
     def get_best_move(self, fen, moves):
         try:
             if self._engine_mode == 'pikafish_terminal' and self.engine:
@@ -300,9 +351,24 @@ class PikafishBot:
             fn = msg.read_string(); sid = msg.read_byte(); cb = msg.read_long(); sc = msg.read_long()
             lv = msg.read_byte(); aid = msg.read_short(); av = msg.read_ascii(); tid = msg.read_byte()
             io = msg.read_byte() == 1; pid = msg.read_long(); sb = msg.read_long()
-            is_me = (pid == PLAYER_ID); c = "🟢" if is_me else "👤"
-            print(f"[SLOT] {c} {fn} (slot={sid}, chips={cb}, id={pid})")
-            if is_me: self.board.my_slot_id = sid; print(f"[SLOT] Me at slot {sid}")
+            
+            is_me = (pid == PLAYER_ID)
+            c = "🟢" if is_me else "👤"
+            print(f"[SLOT] {c} {fn} (slot={sid}, chips={cb}, id={pid}, master_id={tid})")
+            
+            # Cập nhật ID ghế của chủ bàn
+            if tid >= 0:
+                self.table_master_slot = tid
+
+            if is_me: 
+                self.board.my_slot_id = sid; print(f"[SLOT] Me at slot {sid} (Master Slot is {self.table_master_slot})")
+                # Tự check lại sau khi mình đổi chỗ
+                self._check_and_escape_blacklist()
+            else:
+                if fn: 
+                    self.table_players[sid] = fn
+                    # Kiểm tra người vừa cập nhật ghế
+                    self._check_and_escape_blacklist()
         except Exception as e: print(f"[SLOT] Read error: {e}")
     def _handle_start_match(self, msg):
         print("[GAME] 🎮 Match started!"); self.board.reset(); self.board.is_playing = True; self.in_game = True
@@ -322,14 +388,17 @@ class PikafishBot:
             ftsid = msg.read_byte(); msid = msg.read_byte()
             print(f"[GAME] firstTurn={ftsid}, mySlot={msid}, remain={msg.remaining()}")
             
-            # Khắc phục lỗi gán nhầm hoặc mất thông tin SlotID của Bot
             if msid < 0 and self.board.my_slot_id >= 0: 
-                msid = self.board.my_slot_id
-                print(f"[GAME] ⚠️ Using known slot={msid}")
+                msid = self.board.my_slot_id; print(f"[GAME] ⚠️ Using known slot={msid}")
             else:
                 self.board.my_slot_id = msid
 
             self.board.set_my_slot(msid, ftsid)
+            
+            # Lúc này is_playing đã lên True -> _check_and_escape_blacklist() sẽ tự trả về False không thoát nữa.
+            if self._check_and_escape_blacklist():
+                return
+
             fen = self._build_fen_from_pieces(bp, ftsid)
             self.board.fen = fen; self.board.move_history = []
             cn = "ĐỎ" if self.board.is_red else "ĐEN"
@@ -340,8 +409,7 @@ class PikafishBot:
                 print("[GAME] 🎯 My turn! Thinking...")
                 threading.Thread(target=self._make_auto_move, daemon=True).start()
             else: 
-                self.board.is_my_turn = False
-                print("[GAME] Opponent's turn...")
+                self.board.is_my_turn = False; print("[GAME] Opponent's turn...")
         except Exception as e: print(f"[GAME] ❌ START_MATCH error: {e}"); import traceback; traceback.print_exc()
     def _build_fen_from_pieces(self, pieces, ftsid):
         board = [['.' for _ in range(9)] for _ in range(10)]
@@ -372,9 +440,6 @@ class PikafishBot:
             print(f"[MOVE] 🏃 {sp}->{tp} = {em}"); print(f"[MOVE] History: {' '.join(self.board.move_history[-6:])}")
             try: cnt = msg.read_byte(); 
             except: pass
-            
-            # Loại bỏ hoàn toàn logic tính imt dựa theo length của mảng tại đây 
-            # để loại trừ trường hợp lag dẫn tới lệch chỉ số nước đi (khiến BOT treo).
         except Exception as e: print(f"[MOVE] ❌ Error: {e}"); import traceback; traceback.print_exc()
     def _handle_play_response(self, msg):
         try:
@@ -393,10 +458,7 @@ class PikafishBot:
             sid = msg.read_byte(); tt = msg.read_short()
             if sid == -2: print(f"[TURN] Countdown: {tt}"); return
             pr = msg.read_short()
-            
-            # Gán lượt đi đồng bộ tuyệt đối từ Server phản hồi
-            imt = (sid == self.board.my_slot_id)
-            self.board.is_my_turn = imt
+            imt = (sid == self.board.my_slot_id); self.board.is_my_turn = imt
             ts = "🎯 MY TURN" if imt else f"Opponent (slot={sid})"
             print(f"[TURN] ⏱️ {ts}, timeout={tt}s, remain={pr}s")
             
@@ -406,19 +468,30 @@ class PikafishBot:
         except Exception as e: print(f"[TURN] ❌ Read error: {e}")
     def _handle_gameover(self, msg):
         print("[GAME] 🏁 Game over!")
-        if not self.board.is_playing: return # Tránh lặp trạng thái gameover liên tục
+        if not self.board.is_playing: return
         
         self.board.is_playing = False; self.in_game = False; self.board.is_my_turn = False
         try:
             cnt = msg.read_byte()
             for i in range(cnt):
                 sid = msg.read_byte(); gr = msg.read_byte(); ev = msg.read_long()
-                is_me = (sid == self.board.my_slot_id); r = "🏆 WIN" if gr == 1 else "💀 LOSE" if gr == 2 else "🤝 DRAW"
-                if is_me: print(f"[GAME] Result: {r} (earn={ev})")
+                is_me = (sid == self.board.my_slot_id)
+                r = "🏆 WIN" if gr == 1 else "💀 LOSE" if gr == 2 else "🤝 DRAW"
+                
+                if is_me: 
+                    print(f"[GAME] Result: {r} (earn={ev})")
+                    # Nếu BOT THUA (gr == 2), tìm xem đối thủ gài thế cờ ở slot nào để lưu tên vào danh sách đen
+                    if gr == 2:
+                        for opp_sid, opp_name in self.table_players.items():
+                            if opp_sid != self.board.my_slot_id and opp_sid == self.table_master_slot:
+                                self._add_to_blacklist(opp_name)
+            
             mr = msg.read_string(); print(f"[GAME] Detail: {mr}")
         except Exception as e: print(f"[GAME] Gameover read error: {e}")
         
-        # Đẩy logic tìm trận mới vào Thread chạy ngầm tránh làm treo kết nối WS chính
+        self.table_players.clear()
+        self.table_master_slot = -1
+        
         def delay_next_match():
             print("[GAME] Finding new match in 5s...")
             time.sleep(5)
@@ -430,10 +503,17 @@ class PikafishBot:
         try: print(f"[STATE] State: {msg.read_byte()}")
         except: pass
     def _handle_player_entered(self, msg):
-        try: print(f"[PLAYER] 👋 {msg.read_string()} joined")
+        try: 
+            name = msg.read_string()
+            print(f"[PLAYER] 👋 {name} joined")
+            # Người vào xem thoải mái, không cần kích hoạt logic check thoát bàn ở đây nữa
         except: pass
     def _handle_player_exited(self, msg):
-        try: print(f"[PLAYER] 👋 {msg.read_string()} left")
+        try: 
+            name = msg.read_string()
+            print(f"[PLAYER] 👋 {name} left")
+            for sid, n in list(self.table_players.items()):
+                if n == name: del self.table_players[sid]
         except: pass
     def _handle_broadcast(self, msg):
         try: print(f"[BROADCAST] 📢 {msg.read_string()}")
@@ -483,7 +563,7 @@ class PikafishBot:
         while True:
             try:
                 print(f"\n[0] Fetching token... (connect #{rc+1})"); fetch_session_info()
-                self.logged_in = False; self.in_game = False; self.board.reset()
+                self.logged_in = False; self.in_game = False; self.board.reset(); self.table_players.clear(); self.table_master_slot = -1
                 print("\n[1] Connecting WebSocket...")
                 if not self.connect(): print("❌ WS fail! Retry in 10s..."); time.sleep(10); rc += 1; continue
                 print("✅ WS connected!"); self.start_keep_alive()
