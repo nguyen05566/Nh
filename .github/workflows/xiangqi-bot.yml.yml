@@ -1,0 +1,55 @@
+name: Xiangqi Bot - gamevh.net
+
+on:
+  # Chạy khi push code
+  push:
+    branches: [main, master]
+  # Chạy khi tạo workflow_dispatch (nút bấm thủ công)
+  workflow_dispatch:
+  # Chạy theo lịch: mỗi 6 giờ restart 1 lần (tránh timeout)
+  schedule:
+    - cron: '0 */6 * * *'
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    
+    # Giới hạn thời gian chạy tối đa 5 giờ 50 phút (gần giới hạn 6h của GitHub)
+    timeout-minutes: 350
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install websocket-client requests pikafish-terminal
+
+      - name: Run Xiangqi Bot
+        env:
+          # Cấu hình tài khoản - SỬA Ở ĐÂY
+          GAMEVH_COOKIE: ${{ secrets.GAMEVH_COOKIE }}
+          GAMEVH_NICKNAME: ${{ secrets.GAMEVH_NICKNAME }}
+          GAMEVH_PLAYER_ID: ${{ secrets.GAMEVH_PLAYER_ID }}
+          GAMEVH_GAME_ID: xiangqi
+          GAMEVH_PLACE_PATH: Lobby.xiangqi.0
+          BOT_DEPTH: 15
+        run: |
+          echo "🚀 Starting Xiangqi Bot..."
+          echo "⏱️ Bot will run for up to 5 hours 50 minutes"
+          python xiangqi_bot.py
+
+      - name: Upload logs (if failed)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot-logs-${{ github.run_id }}
+          path: |
+            *.log
+            /tmp/*.log
