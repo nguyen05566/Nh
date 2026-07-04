@@ -3,6 +3,7 @@
 Xiangqi Bot - gamevh.net - GitHub Actions Edition
 Tự động lấy token, chạy 24/7 với auto-reconnect
 Tích hợp Logic: Tự động né khi vào bàn của đối thủ gài cờ (Blacklist) khi chưa bắt đầu trận.
+Auto-search bàn: Tự động tìm bàn liên tục khi ở ngoài sảnh.
 """
 
 import struct
@@ -31,6 +32,7 @@ PLAYER_ID = int(os.environ.get('GAMEVH_PLAYER_ID', '65692738'))
 GAME_ID = os.environ.get('GAMEVH_GAME_ID', 'xiangqi')
 PLACE_PATH = os.environ.get('GAMEVH_PLACE_PATH', 'Lobby.xiangqi.0')
 BOT_DEPTH = int(os.environ.get('BOT_DEPTH', '20'))
+AUTO_SEARCH_INTERVAL = int(os.environ.get('AUTO_SEARCH_INTERVAL', '3'))  # Tìm bàn mỗi 3s khi ở sảnh
 
 WS_URL = "wss://gamevh.net/ws/gameServer"
 TOKEN = 0
@@ -157,6 +159,8 @@ class PikafishBot:
         self._engine_mode = None
         self.table_players = {}  # {slot_id: nickname}
         self.table_master_slot = -1  # Lưu ID ghế của chủ bàn hiện tại
+        self.in_lobby = False  # Trạng thái ở sảnh
+        self.auto_search_thread = None  # Thread tự động tìm bàn
         self._init_engine()
         self._load_blacklist()
 
@@ -214,6 +218,32 @@ class PikafishBot:
                     self.send_surrender() # Thoát bàn
                     return True
         return False
+
+    def _start_auto_search(self):
+        """Bắt đầu luồng tự động tìm bàn khi ở sảnh"""
+        if self.auto_search_thread and self.auto_search_thread.is_alive():
+            return  # Đã có luồng chạy rồi
+        
+        def auto_search_loop():
+            print(f"[AUTO-SEARCH] ✅ Bắt đầu tìm bàn tự động (mỗi {AUTO_SEARCH_INTERVAL}s)")
+            while self.in_lobby and self.connected and not self.in_game:
+                try:
+                    print(f"[AUTO-SEARCH] 🔍 Tìm bàn...")
+                    self.send_quick_play()
+                    time.sleep(AUTO_SEARCH_INTERVAL)
+                except Exception as e:
+                    print(f"[AUTO-SEARCH] ❌ Error: {e}")
+                    time.sleep(AUTO_SEARCH_INTERVAL)
+            print(f"[AUTO-SEARCH] ⛔ Dừng tìm bàn (in_lobby={self.in_lobby}, in_game={self.in_game})")
+        
+        self.auto_search_thread = threading.Thread(target=auto_search_loop, daemon=True)
+        self.auto_search_thread.start()
+
+    def _stop_auto_search(self):
+        """Dừng tìm bàn tự động"""
+        self.in_lobby = False
+        if self.auto_search_thread and self.auto_search_thread.is_alive():
+            print("[AUTO-SEARCH] ⛔ Dừng luồng tìm bàn")
 
     def get_best_move(self, fen, moves):
         try:
@@ -327,17 +357,21 @@ class PikafishBot:
             try: err = msg.read_string()
             except: err = "Unknown"
             print(f"[ENTER_PLACE] ❌ {err}"); return
-        print("[ENTER_PLACE] ✅ Success!")
+        print("[ENTER_PLACE] ✅ Success! Bạn đã vào sảnh, bắt đầu tìm bàn...")
+        self.in_lobby = True
         try: currency = msg.read_byte(); rate = msg.read_short()/10.0; print(f"[ENTER_PLACE] Currency={currency}, Rate={rate}")
         except: pass
-        if not self.in_game: time.sleep(1.5); self.send_quick_play()
+        if not self.in_game: 
+            time.sleep(0.5)
+            self._start_auto_search()  # Bắt đầu tìm bàn tự động
     def _handle_quick_play_response(self, msg):
         status = msg.read_byte()
         if status != 0:
             try: err = msg.read_string()
             except: err = "Unknown"
             print(f"[QUICK_PLAY] ❌ {err}"); return
-        print("[QUICK_PLAY] ✅ Found table!"); self.in_game = True
+        print("[QUICK_PLAY] ✅ Found table!"); self.in_game = True; self.in_lobby = False
+        self._stop_auto_search()  # Dừng tìm bàn khi tìm được bàn
         try:
             tp = msg.read_ascii(); tn = msg.read_string()
             print(f"[QUICK_PLAY] Table: {tn} ({tp})")
@@ -493,10 +527,11 @@ class PikafishBot:
         self.table_master_slot = -1
         
         def delay_next_match():
-            print("[GAME] Finding new match in 5s...")
-            time.sleep(5)
+            print("[GAME] Quay lại sảnh, tìm bàn mới...")
+            self.in_lobby = True
+            time.sleep(2)
             if not self.in_game and self.connected:
-                self.send_quick_play()
+                self._start_auto_search()
         threading.Thread(target=delay_next_match, daemon=True).start()
 
     def _handle_enter_state(self, msg):
@@ -558,12 +593,12 @@ class PikafishBot:
         self.kat = threading.Thread(target=kal, daemon=True); self.kat.start()
         print("[KEEP-ALIVE] PING every 7s")
     def run(self):
-        print("=" * 60); print("  XIANGQI BOT - gamevh.net"); print("  Engine: Pikafish"); print("  Auto-reconnect: ON"); print("=" * 60)
+        print("=" * 60); print("  XIANGQI BOT - gamevh.net"); print("  Engine: Pikafish"); print("  Auto-reconnect: ON"); print("  Auto-search: ON"); print("=" * 60)
         rc = 0
         while True:
             try:
                 print(f"\n[0] Fetching token... (connect #{rc+1})"); fetch_session_info()
-                self.logged_in = False; self.in_game = False; self.board.reset(); self.table_players.clear(); self.table_master_slot = -1
+                self.logged_in = False; self.in_game = False; self.in_lobby = False; self.board.reset(); self.table_players.clear(); self.table_master_slot = -1
                 print("\n[1] Connecting WebSocket...")
                 if not self.connect(): print("❌ WS fail! Retry in 10s..."); time.sleep(10); rc += 1; continue
                 print("✅ WS connected!"); self.start_keep_alive()
@@ -573,18 +608,19 @@ class PikafishBot:
                     time.sleep(0.2)
                 if not self.logged_in: print("❌ Login fail! Retry in 10s..."); time.sleep(10); rc += 1; continue
                 print("✅ Logged in!")
-                print("\n[3] Finding table...")
+                print("\n[3] Entering lobby...")
                 for _ in range(300):
-                    if self.in_game and self.board.is_playing: break
+                    if self.in_lobby: break
                     time.sleep(0.2)
-                if not self.in_game: print("⚠️ No table yet, continuing...")
-                print("\n[4] Bot running. Auto-reconnect enabled.\n")
+                if not self.in_lobby: print("⚠️ Lobby not reached, continuing...")
+                print("\n[4] Bot running. Auto-search enabled.\n")
                 while self.connected: time.sleep(1)
                 print(f"\n[RECONNECT] Disconnected! (#{rc+1})"); rc += 1; time.sleep(5)
             except KeyboardInterrupt: print("\n[BOT] Stopping..."); break
             except Exception as e: print(f"\n[BOT] ❌ Error: {e}"); rc += 1; time.sleep(10)
         return True
     def cleanup(self):
+        self._stop_auto_search()
         if self.engine:
             try: self.engine.quit()
             except: pass
