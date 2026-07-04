@@ -32,4 +32,4 @@ jobs:
       - name: Run Bot for 3 Hours
         run: |
           # Chạy script với giới hạn thời gian 180 phút
-          timeout 180m python tttt.py || echo "Bot session ended after 3 hours."
+          timeout 180m python ttt.py || echo "Bot session ended after 3 hours."
