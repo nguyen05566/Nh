@@ -39,7 +39,7 @@ jobs:
           GAMEVH_PLAYER_ID: ${{ secrets.GAMEVH_PLAYER_ID }}
           GAMEVH_GAME_ID: xiangqi
           GAMEVH_PLACE_PATH: Lobby.xiangqi.0
-          BOT_DEPTH: 15
+          BOT_DEPTH: 20
         run: |
           echo "🚀 Starting Xiangqi Bot..."
           echo "⏱️ Bot will run for up to 5 hours 50 minutes"
