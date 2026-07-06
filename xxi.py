@@ -41,13 +41,14 @@ CURRENT_PLAYER_NICKNAME = os.environ.get('GAMEVH_NICKNAME', 'nguyen05522')
 CURRENT_PLAYER_ID = int(os.environ.get('GAMEVH_PLAYER_ID', '65692738'))
 TOKEN = 0 
 GAME_ID = os.environ.get('GAMEVH_GAME_ID', 'xiangqi')
-PLACE_PATH = os.environ.get('GAMEVH_PLACE_PATH', 'Lobby.xiangqi.1')
+PLACE_PATH = os.environ.get('GAMEVH_PLACE_PATH', 'Lobby.xiangqi.0')
 
 # ĐÃ GIẢM: Độ sâu mặc định hạ xuống 15 để tính toán siêu tốc
 BOT_DEPTH = int(os.environ.get('BOT_DEPTH', '15'))
 
 # ===== CẤU HÌNH TẠO BÀN =====
-BOT_BET_AMT_ID = int(os.environ.get('BOT_BET_AMT_ID', '7'))
+# Mức cược: đặt số xu mong muốn, bot sẽ tự tìm ID tương ứng từ server
+BOT_BET_XU = int(os.environ.get('BOT_BET_XU', '10000'))
 BOT_USE_CREATE_TABLE = os.environ.get('BOT_USE_CREATE_TABLE', 'true').lower() == 'true'
 
 BOT_MATCH_DURATION = os.environ.get('BOT_MATCH_DURATION', '5')    # Phút/ván
@@ -246,6 +247,10 @@ class PikafishBot:
         self._returning_to_lobby = False
         self._last_quick_play_time = 0
         self._QUICK_PLAY_INTERVAL = 10
+        # Danh sách mức cược từ server (LIST_BET_AMT)
+        self.bet_amts = []  # [{"id": 0, "value": 100}, ...]
+        self._resolved_bet_id = None  # ID đã tìm được cho BOT_BET_XU
+        self._bet_amts_loaded = False  # Đã nhận danh sách cược chưa
         self._init_engine()
 
     def _init_engine(self):
@@ -361,6 +366,9 @@ class PikafishBot:
         self.in_game = False
         self._joining_table = False
         self._returning_to_lobby = False
+        self._bet_amts_loaded = False
+        self._resolved_bet_id = None
+        self.bet_amts = []
 
     def send_message(self, cmd, data=b''):
         if self.ws and self.connected:
@@ -386,6 +394,33 @@ class PikafishBot:
         data.extend(self.conn.pack_byte(mode))
         self.send_message("ENTER_PLACE", bytes(data))
 
+    def send_list_bet_amt(self):
+        """Gửi LIST_BET_AMT (413) để lấy danh sách mức cược hợp lệ từ server."""
+        print("[LOBBY] Lấy danh sách mức cược từ server...")
+        self.send_message("LIST_BET_AMT")
+
+    def resolve_bet_amt_id(self):
+        """Tìm bet_amt_id có giá trị == BOT_BET_XU (hoặc gần nhất)."""
+        if not self.bet_amts:
+            return None
+        # Ưu tiên tìm chính xác BOT_BET_XU
+        for ba in self.bet_amts:
+            if ba['value'] == BOT_BET_XU:
+                return ba['id']
+        # Không tìm thấy chính xác → lấy mức cao nhất nhỏ hơn hoặc bằng
+        lower = [ba for ba in self.bet_amts if 0 < ba['value'] <= BOT_BET_XU]
+        if lower:
+            best = max(lower, key=lambda x: x['value'])
+            print(f"[LOBBY] ⚠️ Không tìm thấy mức {BOT_BET_XU:,} xu, dùng gần nhất: id={best['id']} ({best['value']:,} xu)")
+            return best['id']
+        # Fallback: mức cao nhất
+        valid = [ba for ba in self.bet_amts if ba['value'] > 0]
+        if valid:
+            best = max(valid, key=lambda x: x['value'])
+            print(f"[LOBBY] ⚠️ Mức {BOT_BET_XU:,} xu quá cao, dùng cao nhất: id={best['id']} ({best['value']:,} xu)")
+            return best['id']
+        return 0
+
     # ======== CREATE_RULE (405) - TẠO BÀN ========
     def send_create_table(self, bet_amt_id=None, match_duration=None, turn_duration=None, 
                           acc_duration=None, block_software=None):
@@ -397,13 +432,22 @@ class PikafishBot:
             return
         self._last_quick_play_time = now
 
-        if bet_amt_id is None: bet_amt_id = BOT_BET_AMT_ID
+        # Tự tìm bet_amt_id từ danh sách server nếu chưa chỉ định
+        if bet_amt_id is None:
+            if self._resolved_bet_id is not None:
+                bet_amt_id = self._resolved_bet_id
+            else:
+                bet_amt_id = self.resolve_bet_amt_id()
+                if bet_amt_id is None:
+                    print("[LOBBY] ⚠️ Chưa có danh sách cược, không thể tạo bàn")
+                    return
         if match_duration is None: match_duration = BOT_MATCH_DURATION
         if turn_duration is None: turn_duration = BOT_TURN_DURATION
         if acc_duration is None: acc_duration = BOT_ACC_DURATION
         if block_software is None: block_software = BOT_BLOCK_SOFTWARE
 
-        print(f"[LOBBY] Đang tạo bàn | Mức cược ID: {bet_amt_id} | Match: {match_duration}m | Turn: {turn_duration}s")
+        xu_info = f"{self.bet_amts[bet_amt_id]['value']:,} xu" if bet_amt_id < len(self.bet_amts) else "?"
+        print(f"[LOBBY] Đang tạo bàn | Mức cược ID: {bet_amt_id} ({xu_info}) | Match: {match_duration}m | Turn: {turn_duration}s")
 
         args = [
             ("matchDuration", str(match_duration)),
@@ -451,6 +495,7 @@ class PikafishBot:
             elif cmd == "LOGIN": self._handle_login_response(msg)
             elif cmd == "ENTER_PLACE": self._handle_enter_place_response(msg)
             elif cmd == "QUICK_PLAY": self._handle_quick_play_response(msg)
+            elif cmd == "LIST_BET_AMT": self._handle_list_bet_amt_response(msg)
             elif cmd == "CREATE_RULE": self._handle_create_rule_response(msg)
             elif cmd == "SLOT_IN_TABLE_CHANGED": self._handle_slot_changed(msg)
             elif cmd == "START_MATCH": self._handle_start_match(msg)
@@ -479,7 +524,10 @@ class PikafishBot:
                 self._joining_table = False
                 self.in_game = True
             elif not self.in_game:
-                print("[PLACE] Đã vào sảnh chờ. Sẵn sàng tìm/tạo bàn mới.")
+                print("[PLACE] Đã vào sảnh chờ. Lấy danh sách mức cược...")
+                self._bet_amts_loaded = False
+                self._resolved_bet_id = None
+                self.send_list_bet_amt()
             else:
                 print("[PLACE] ⚠️ Bàn chơi bị giải tán hoặc bị đá ra sảnh! Đang chuẩn bị tạo bàn mới...")
                 self.in_game = False
@@ -501,6 +549,34 @@ class PikafishBot:
         else:
             self.in_game = False
             print("[LOBBY] Không tìm thấy bàn trống thích hợp.")
+
+    # ======== HANDLER LIST_BET_AMT (413) ========
+    def _handle_list_bet_amt_response(self, msg):
+        """Xử lý LIST_BET_AMT (413) - danh sách mức cược từ server.
+        Response: byte count, loop(int value)
+        """
+        status = msg.read_byte()
+        if status != 0:
+            print(f"[LOBBY] ❌ Lỗi lấy danh sách cược: status={status}")
+            return
+        count = msg.read_byte()
+        self.bet_amts = []
+        for i in range(count):
+            value = msg.read_int()
+            self.bet_amts.append({"id": i, "value": value})
+
+        # In danh sách
+        print(f"[LOBBY] 📋 Danh sách mức cược ({count} mức):")
+        for ba in self.bet_amts:
+            print(f"  id={ba['id']} → {ba['value']:,} xu")
+
+        # Tìm ID cho BOT_BET_XU
+        chosen = self.resolve_bet_amt_id()
+        if chosen is not None:
+            self._resolved_bet_id = chosen
+            xu_val = self.bet_amts[chosen]['value']
+            print(f"[LOBBY] ✅ Mức cược {BOT_BET_XU:,} xu → bet_amt_id={chosen} ({xu_val:,} xu)")
+        self._bet_amts_loaded = True
 
     # ======== HANDLER CREATE_RULE (405) ========
     def _handle_create_rule_response(self, msg):
@@ -681,7 +757,7 @@ class PikafishBot:
     def run(self):
         print("[BOT] Khởi chạy hệ thống giám sát tự động...")
         print(f"[CONFIG] Chế độ: {'CREATE_TABLE' if BOT_USE_CREATE_TABLE else 'QUICK_PLAY'}")
-        print(f"[CONFIG] Mức cược ID: {BOT_BET_AMT_ID} | Match: {BOT_MATCH_DURATION}m | Turn: {BOT_TURN_DURATION}s")
+        print(f"[CONFIG] Mức cược mong muốn: {BOT_BET_XU:,} xu | Match: {BOT_MATCH_DURATION}m | Turn: {BOT_TURN_DURATION}s")
 
         while True:
             try:
@@ -694,6 +770,9 @@ class PikafishBot:
                     self.in_game = False
                     self._joining_table = False
                     self._returning_to_lobby = False
+                    self._bet_amts_loaded = False
+                    self._resolved_bet_id = None
+                    self.bet_amts = []
                     self.board.reset()
 
                     if not self.connect():
@@ -706,8 +785,13 @@ class PikafishBot:
                     now = time.time()
                     if now - self._last_quick_play_time >= self._QUICK_PLAY_INTERVAL:
                         if BOT_USE_CREATE_TABLE:
-                            print("[MONITOR] Bot trống ở sảnh, đang tạo bàn mới...")
-                            self.send_create_table()
+                            if not self._bet_amts_loaded:
+                                if not self.bet_amts:
+                                    print("[MONITOR] Chưa có danh sách cược, gửi LIST_BET_AMT...")
+                                    self.send_list_bet_amt()
+                            else:
+                                print("[MONITOR] Bot trống ở sảnh, đang tạo bàn mới...")
+                                self.send_create_table()
                         else:
                             print("[MONITOR] Bot trống ở sảnh, kích hoạt tìm trận đấu...")
                             self.send_quick_play()
