@@ -41,7 +41,7 @@ CURRENT_PLAYER_NICKNAME = os.environ.get('GAMEVH_NICKNAME', 'nguyen05522')
 CURRENT_PLAYER_ID = int(os.environ.get('GAMEVH_PLAYER_ID', '65692738'))
 TOKEN = 0 
 GAME_ID = os.environ.get('GAMEVH_GAME_ID', 'xiangqi')
-PLACE_PATH = os.environ.get('GAMEVH_PLACE_PATH', 'Lobby.xiangqi.0')
+PLACE_PATH = os.environ.get('GAMEVH_PLACE_PATH', 'Lobby.xiangqi.1')
 
 # ĐÃ GIẢM: Độ sâu mặc định hạ xuống 15 để tính toán siêu tốc
 BOT_DEPTH = int(os.environ.get('BOT_DEPTH', '15'))
