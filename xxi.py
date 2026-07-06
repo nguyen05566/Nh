@@ -47,7 +47,7 @@ PLACE_PATH = os.environ.get('GAMEVH_PLACE_PATH', 'Lobby.xiangqi.0')
 BOT_DEPTH = int(os.environ.get('BOT_DEPTH', '15'))
 
 # ===== CẤU HÌNH TẠO BÀN =====
-BOT_BET_AMT_ID = int(os.environ.get('BOT_BET_AMT_ID', '5'))
+BOT_BET_AMT_ID = int(os.environ.get('BOT_BET_AMT_ID', '6'))
 BOT_USE_CREATE_TABLE = os.environ.get('BOT_USE_CREATE_TABLE', 'true').lower() == 'true'
 
 BOT_MATCH_DURATION = os.environ.get('BOT_MATCH_DURATION', '5')    # Phút/ván
