@@ -2,6 +2,7 @@
 """
 Xiangqi Bot - gamevh.net (CREATE_TABLE Edition)
 Command tạo bàn: CREATE_RULE (405) - từ source gamevh.net
+Tối ưu hóa: Chống treo khi đối thủ bỏ lượt đầu trận, depth 15, no threads/hash.
 """
 
 import struct
@@ -36,14 +37,13 @@ COOKIE = os.environ.get(
 )
 WS_URL = "wss://gamevh.net/ws/gameServer"
 
-# Mặc định sử dụng tài khoản cấu hình từ GitHub Secrets, nếu không có sẽ lấy nguyen05522
 CURRENT_PLAYER_NICKNAME = os.environ.get('GAMEVH_NICKNAME', 'nguyen05522')
 CURRENT_PLAYER_ID = int(os.environ.get('GAMEVH_PLAYER_ID', '65692738'))
 TOKEN = 0 
 GAME_ID = os.environ.get('GAMEVH_GAME_ID', 'xiangqi')
 PLACE_PATH = os.environ.get('GAMEVH_PLACE_PATH', 'Lobby.xiangqi.0')
 
-# ĐÃ GIẢM: Độ sâu mặc định hạ xuống 15 để tính toán siêu tốc
+# ĐÃ GIẢM: Độ sâu 15 giúp Pikafish tính toán siêu tốc (chỉ 0.5s - 2s)
 BOT_DEPTH = int(os.environ.get('BOT_DEPTH', '15'))
 
 # ===== CẤU HÌNH TẠO BÀN =====
@@ -222,7 +222,8 @@ class XiangqiBoardTracker:
         return s_row * 9 + s_col, t_row * 9 + t_col
 
     def get_current_fen(self):
-        side = 'w' if len(self.move_history) % 2 == 0 else 'b'
+        # TỐI ƯU CHỐNG BỎ LƯỢT: Xác định side đi thực tế dựa vào trạng thái is_my_turn của Bot thay vì đếm chẵn lẻ nước đi
+        side = 'w' if self.is_my_turn == self.is_red else 'b'
         board_fen = self.fen.split(' ')[0] if ' ' in self.fen else self.fen
         return f"{board_fen} {side}", self.move_history
 
@@ -278,9 +279,7 @@ class PikafishBot:
             
             self._fsf_cmd("setoption name Use NNUE value true")
             
-            # ĐÃ BỎ: Không can thiệp cấu hình Threads và Hash (để Pikafish tự dùng mặc định)
-            # self._fsf_cmd("setoption name Threads value 2")
-            # self._fsf_cmd("setoption name Hash value 128")
+            # ĐÃ XÓA: Threads và Hash (để Pikafish tự chạy cấu hình mặc định, tránh quá tải GitHub)
             
             self._fsf_cmd("isready")
             self._fsf_wait_for("readyok")
@@ -575,9 +574,7 @@ class PikafishBot:
             self.board.set_my_slot(my_slot_id, first_turn_slot_id)
             self.board.fen = self._build_fen_from_pieces(board_pieces)
 
-            if my_slot_id == first_turn_slot_id:
-                self.board.is_my_turn = True
-                threading.Thread(target=self._make_auto_move, daemon=True).start()
+            # Để SET_TURN kích hoạt nước đi đầu tiên để đồng bộ tốt hơn
         except Exception as e:
             print(f"[GAME ERROR] START_MATCH: {e}")
 
@@ -619,13 +616,7 @@ class PikafishBot:
                 self.board.move_history.append(engine_move)
 
             print(f"[MOVE] Đối thủ đi: {engine_move}")
-
-            is_red_turn = (len(self.board.move_history) % 2 == 0)
-            if (is_red_turn == self.board.is_red) and self.board.is_playing:
-                self.board.is_my_turn = True
-                threading.Thread(target=self._make_auto_move, daemon=True).start()
-            else:
-                self.board.is_my_turn = False
+            # THAY ĐỔI: Không tự ý kích hoạt auto_move tại đây để tránh bị lệch lượt khi bỏ lượt
         except Exception as e: print(f"[MOVE ERROR] {e}")
 
     def _handle_play_response(self, msg):
@@ -638,8 +629,15 @@ class PikafishBot:
         try:
             slot_id = msg.read_byte()
             if slot_id != -1:
+                # THAY ĐỔI: Cập nhật trực tiếp lượt đi chính xác từ thông điệp của Server GameVH
                 self.board.is_my_turn = (slot_id == self.board.my_slot_id)
-        except: pass
+                
+                # Nếu thực sự đến lượt của Bot (xử lý ngon cả khi đối thủ bấm BỎ LƯỢT)
+                if self.board.is_my_turn and self.board.is_playing:
+                    print(f"[TURN] Đến lượt bot đi (Slot: {slot_id}). Bắt đầu tính toán...")
+                    threading.Thread(target=self._make_auto_move, daemon=True).start()
+        except Exception as e:
+            print(f"[SET_TURN ERROR] {e}")
 
     def _handle_gameover(self, msg):
         print("[GAME] 🏁 Trận đấu kết thúc. Giữ nguyên vị trí ở lại bàn chơi...")
@@ -735,6 +733,7 @@ class PikafishBot:
             except: pass
 
 if __name__ == "__main__":
+    # GIỮ NGUYÊN: Cấu hình 15 nhận từ biến môi trường BOT_DEPTH phía trên
     bot = PikafishBot(depth=BOT_DEPTH)
     def signal_handler(sig, frame): bot.cleanup(); sys.exit(0)
     signal.signal(signal.SIGINT, signal_handler)
