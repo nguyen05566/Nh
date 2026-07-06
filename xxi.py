@@ -36,12 +36,15 @@ COOKIE = os.environ.get(
 )
 WS_URL = "wss://gamevh.net/ws/gameServer"
 
+# Mặc định sử dụng tài khoản cấu hình từ GitHub Secrets, nếu không có sẽ lấy nguyen05522
 CURRENT_PLAYER_NICKNAME = os.environ.get('GAMEVH_NICKNAME', 'nguyen05522')
 CURRENT_PLAYER_ID = int(os.environ.get('GAMEVH_PLAYER_ID', '65692738'))
 TOKEN = 0 
 GAME_ID = os.environ.get('GAMEVH_GAME_ID', 'xiangqi')
 PLACE_PATH = os.environ.get('GAMEVH_PLACE_PATH', 'Lobby.xiangqi.0')
-BOT_DEPTH = int(os.environ.get('BOT_DEPTH', '10'))
+
+# ĐÃ GIẢM: Độ sâu mặc định hạ xuống 15 để tính toán siêu tốc
+BOT_DEPTH = int(os.environ.get('BOT_DEPTH', '15'))
 
 # ===== CẤU HÌNH TẠO BÀN =====
 BOT_BET_AMT_ID = int(os.environ.get('BOT_BET_AMT_ID', '5'))
@@ -230,7 +233,7 @@ class XiangqiBoardTracker:
 
 # ==================== LỚP ĐIỀU KHIỂN BOT ====================
 class PikafishBot:
-    def __init__(self, depth=20):
+    def __init__(self, depth=15):
         self.conn = Conn()
         self.board = XiangqiBoardTracker()
         self.engine = None
@@ -272,9 +275,13 @@ class PikafishBot:
                 print(f"[ENGINE] 🧠 NNUE: {nnue_path}")
             else:
                 print("[ENGINE] ⚠️ Không tìm thấy file NNUE, chạy không có neural net.")
+            
             self._fsf_cmd("setoption name Use NNUE value true")
-            self._fsf_cmd("setoption name Threads value 2")
-            self._fsf_cmd("setoption name Hash value 128")
+            
+            # ĐÃ BỎ: Không can thiệp cấu hình Threads và Hash (để Pikafish tự dùng mặc định)
+            # self._fsf_cmd("setoption name Threads value 2")
+            # self._fsf_cmd("setoption name Hash value 128")
+            
             self._fsf_cmd("isready")
             self._fsf_wait_for("readyok")
             self.engine = True
@@ -474,8 +481,6 @@ class PikafishBot:
             elif not self.in_game:
                 print("[PLACE] Đã vào sảnh chờ. Sẵn sàng tìm/tạo bàn mới.")
             else:
-                # Trường hợp: Tự dưng nhận được gói tin chuyển vùng khi đang ở trong phòng (in_game=True)
-                # Chứng tỏ server đã ép bot văng ra ngoài sảnh (do treo lâu hoặc bàn bị hủy)
                 print("[PLACE] ⚠️ Bàn chơi bị giải tán hoặc bị đá ra sảnh! Đang chuẩn bị tạo bàn mới...")
                 self.in_game = False
                 self._joining_table = False
