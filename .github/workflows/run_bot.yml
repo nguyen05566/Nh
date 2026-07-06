@@ -1,1 +1,73 @@
+name: Run Xiangqi Bot
 
+on:
+  workflow_dispatch: # Cho phép bạn bấm nút "Run workflow" để chạy bằng tay từ giao diện GitHub
+  schedule:
+    - cron: '0 */6 * * *' # (Tùy chọn) Tự động chạy lại mỗi 6 tiếng nếu muốn duy trì bot
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+
+    env:
+      # Lấy thông tin tài khoản từ GitHub Secrets để bảo mật
+      GAMEVH_COOKIE: ${{ secrets.GAMEVH_COOKIE }}
+      GAMEVH_NICKNAME: ${{ secrets.GAMEVH_NICKNAME }}
+      GAMEVH_PLAYER_ID: ${{ secrets.GAMEVH_PLAYER_ID }}
+      
+      # Các cấu hình tùy chỉnh thêm của Bot
+      BOT_DEPTH: 20
+      BOT_USE_CREATE_TABLE: 'true'
+      BOT_BET_AMT_ID: 5
+      BOT_MATCH_DURATION: 5
+      BOT_TURN_DURATION: 30
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests websocket-client
+
+      - name: Download and Setup Pikafish Engine
+        run: |
+          echo "=====> Đang tải Pikafish Engine..."
+          wget -q https://github.com/official-pikafish/Pikafish/releases/download/Pikafish-2026-01-02/Pikafish.2026-01-02.7z
+          
+          echo "=====> Đang giải nén file .7z..."
+          7z x Pikafish.2026-01-02.7z -opikafish_extracted
+          
+          echo "=====> Tìm kiếm và cấu hình file thực thi Linux..."
+          # Lọc bỏ file .exe (Windows), chọn file tối ưu cho Ubuntu (thường chứa chữ 'modern' hoặc 'avx2')
+          LINUX_BIN=$(find pikafish_extracted -type f \( -name "*modern*" -o -name "*avx2*" -o -name "pikafish" \) ! -name "*.exe" | head -n 1)
+          
+          if [ -z "$LINUX_BIN" ]; then
+            echo "❌ Không tìm thấy file thực thi Linux phù hợp trong gói tải về!"
+            exit 1
+          fi
+          
+          echo "Đã chọn file binary: $LINUX_BIN"
+          cp "$LINUX_BIN" ./pikafish
+          chmod +x ./pikafish
+          
+          echo "=====> Kiểm tra file NNUE (mạng nơ-ron)..."
+          NNUE_FILE=$(find pikafish_extracted -type f -name "*.nnue" | head -n 1)
+          if [ ! -z "$NNUE_FILE" ]; then
+            cp "$NNUE_FILE" ./pikafish.nnue
+            echo "✅ Đã thiết lập xong NNUE tại ./pikafish.nnue"
+          else
+            echo "⚠️ Không tìm thấy file NNUE, bot sẽ chạy bằng thuật toán thuần."
+          fi
+
+      - name: Start Bot
+        run: |
+          # Giả định rằng bạn đặt tên file mã nguồn Python ở Repo là main.py
+          # Nếu đặt tên khác (ví dụ bot.py), hãy sửa lại tên ở dòng dưới đây.
+          python xxi.py
