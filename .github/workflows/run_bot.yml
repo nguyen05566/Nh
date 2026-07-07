@@ -1,13 +1,16 @@
 name: Run Xiangqi Bot
 
+concurrency:
+  group: xiangqi-bot
+  cancel-in-progress: true
+
 on:
-  workflow_dispatch: # Cho phép bạn bấm nút "Run workflow" để chạy bằng tay
-  schedule:
-    - cron: '0 */6 * * *' # Tự động kích hoạt lại bot sau mỗi 6 tiếng để duy trì liên tục
+  workflow_dispatch: # Chỉ cho phép chạy thủ công
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 300
 
     env:
       # Lấy thông tin tài khoản an toàn từ GitHub Repository Secrets
