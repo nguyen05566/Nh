@@ -48,7 +48,7 @@ BOT_DEPTH = int(os.environ.get('BOT_DEPTH', '15'))
 
 # ===== CẤU HÌNH TẠO BÀN =====
 # Mức cược: đặt số xu mong muốn, bot sẽ tự tìm ID tương ứng từ server
-BOT_BET_XU = int(os.environ.get('BOT_BET_XU', '20000'))
+BOT_BET_XU = int(os.environ.get('BOT_BET_XU', '5000'))
 BOT_USE_CREATE_TABLE = os.environ.get('BOT_USE_CREATE_TABLE', 'true').lower() == 'true'
 
 BOT_MATCH_DURATION = os.environ.get('BOT_MATCH_DURATION', '5')    # Phút/ván
