@@ -68,4 +68,4 @@ jobs:
       - name: Start Bot
         run: |
           # Chạy chính xác file xxi.py của bạn
-          python xxi.py
+          python tt.py
