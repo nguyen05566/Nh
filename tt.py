@@ -44,7 +44,7 @@ GAME_ID = os.environ.get('GAMEVH_GAME_ID', 'xiangqi')
 PLACE_PATH = os.environ.get('GAMEVH_PLACE_PATH', 'Lobby.xiangqi.0')
 
 # ĐÃ GIẢM: Độ sâu mặc định hạ xuống 15 để tính toán siêu tốc
-BOT_DEPTH = int(os.environ.get('BOT_DEPTH', '10'))
+BOT_DEPTH = int(os.environ.get('BOT_DEPTH', '15'))
 
 # ===== CẤU HÌNH TẠO BÀN =====
 # Mức cược: đặt số xu mong muốn, bot sẽ tự tìm ID tương ứng từ server
@@ -54,7 +54,7 @@ BOT_USE_CREATE_TABLE = os.environ.get('BOT_USE_CREATE_TABLE', 'true').lower() ==
 BOT_MATCH_DURATION = os.environ.get('BOT_MATCH_DURATION', '5')    # Phút/ván
 BOT_TURN_DURATION = os.environ.get('BOT_TURN_DURATION', '30')        # Giây/nước
 BOT_ACC_DURATION = os.environ.get('BOT_ACC_DURATION', '0')           # Lũy tiến: 0=không
-BOT_BLOCK_SOFTWARE = os.environ.get('BOT_BLOCK_SOFTWARE', '1')     # Chặn phần mềm: 0=không
+BOT_BLOCK_SOFTWARE = os.environ.get('BOT_BLOCK_SOFTWARE', '0')     # Chặn phần mềm: 0=không
 
 def fetch_session_info():
     global COOKIE, TOKEN, CURRENT_PLAYER_NICKNAME, CURRENT_PLAYER_ID
