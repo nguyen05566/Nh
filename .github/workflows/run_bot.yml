@@ -5,7 +5,9 @@ concurrency:
   cancel-in-progress: true
 
 on:
-  workflow_dispatch: # Chỉ cho phép chạy thủ công
+  workflow_dispatch: # Chạy thủ công
+  schedule:
+    - cron: '5 */5 * * *' # Tự động chạy mỗi 5 tiếng (0:05, 5:05, 10:05, 15:05, 20:05 UTC)
 
 jobs:
   run-bot:
