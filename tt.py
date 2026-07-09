@@ -240,7 +240,7 @@ class XiangqiBoardTracker:
 
 # ==================== LỚP ĐIỀU KHIỂN BOT ====================
 class PikafishBot:
-    def __init__(self, depth=15):
+    def __init__(self, depth=10):
         self.conn = Conn()
         self.board = XiangqiBoardTracker()
         self.engine = None
@@ -358,7 +358,7 @@ class PikafishBot:
 
     def _get_move_avoiding_fixed(self, fen, moves, fixed_positions):
         """Dùng MultiPV để lấy top N nước đi, chọn nước đầu không chạm tốt liệt."""
-        max_pv = 5
+        max_pv = 10
         self._fsf_cmd(f"setoption name MultiPV value {max_pv}")
         self._fsf_cmd("isready")
         try:
