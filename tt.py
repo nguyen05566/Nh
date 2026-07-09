@@ -321,11 +321,21 @@ class PikafishBot:
             if fixed_positions:
                 return self._get_move_avoiding_fixed(fen, moves, fixed_positions)
 
+            # Dùng MultiPV=5 để có nhiều lựa chọn hơn
+            self._fsf_cmd(f"setoption name MultiPV value 5")
+            self._fsf_cmd("isready")
+            try:
+                self._fsf_wait_for("readyok", timeout=30)
+            except RuntimeError:
+                pass
             pos_cmd = f"position fen {fen}"
             if moves: pos_cmd += " moves " + " ".join(moves)
             self._fsf_cmd(pos_cmd)
             self._fsf_cmd(f"go depth {self.depth}")
-            return self._read_bestmove()
+            best = self._read_bestmove()
+            # Reset MultiPV về 1
+            self._fsf_cmd("setoption name MultiPV value 1")
+            return best
         except Exception as e:
             print(f"[ENGINE] Lỗi tính nước đi: {e}")
         return None
@@ -348,7 +358,7 @@ class PikafishBot:
 
     def _get_move_avoiding_fixed(self, fen, moves, fixed_positions):
         """Dùng MultiPV để lấy top N nước đi, chọn nước đầu không chạm tốt liệt."""
-        max_pv = 3
+        max_pv = 5
         self._fsf_cmd(f"setoption name MultiPV value {max_pv}")
         self._fsf_cmd("isready")
         try:
