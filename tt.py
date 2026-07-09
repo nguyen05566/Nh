@@ -289,8 +289,8 @@ class PikafishBot:
             self._fsf_cmd("setoption name Use NNUE value true")
             
             # --- CẤU HÌNH ĐÁNH CHẬM RÃI, TRÁNH ÉP KHAI CUỘC ---
-            self._fsf_cmd("setoption name Slow Mover value 10")  # Đi quân bình thản không ào ạt tấn công
-            self._fsf_cmd("setoption name Contempt value 0")    # Tránh đổi hòa quá sớm, chọn lối bền bỉ
+            self._fsf_cmd("setoption name Slow Mover value 0")  # Đi quân bình thản không ào ạt tấn công
+            self._fsf_cmd("setoption name Contempt value -25")    # Tránh đổi hòa quá sớm, chọn lối bền bỉ
             print("[ENGINE] ⚙️ Đã nạp cấu hình ẩn mình: Slow Mover=10, Contempt=0")
             
             self._fsf_cmd("isready")
