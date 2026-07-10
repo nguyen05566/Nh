@@ -21,7 +21,7 @@ jobs:
       GAMEVH_PLAYER_ID: ${{ secrets.GAMEVH_PLAYER_ID }}
       
       # CẤU HÌNH ĐÃ GIẢM: Hạ độ sâu suy nghĩ xuống 15
-      BOT_DEPTH: 15
+      BOT_DEPTH: 20
       BOT_USE_CREATE_TABLE: 'true'
       BOT_BET_AMT_ID: 5
       BOT_MATCH_DURATION: 5
