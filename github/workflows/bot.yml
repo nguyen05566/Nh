@@ -1,0 +1,34 @@
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: |
+        pip install requests websocket-client
+        sudo apt-get update
+        sudo apt-get install -y p7zip-full  # Cài đặt công cụ giải nén 7z
+
+    - name: Download and Prepare Pikafish
+      run: |
+        # Tải file Pikafish[span_0](start_span)[span_0](end_span)
+        wget https://github.com/official-pikafish/Pikafish/releases/download/Pikafish-2026-01-02/Pikafish.2026-01-02.7z
+        # Giải nén file[span_1](start_span)[span_1](end_span)
+        7z x Pikafish.2026-01-02.7z
+        # Cấp quyền thực thi cho file binary
+        # Lưu ý: Hãy kiểm tra tên file bên trong sau khi giải nén, 
+        # thông thường sẽ là 'pikafish' hoặc tương tự
+        chmod +x pikafish 
+
+    - name: Run Bot
+      env:
+        COOKIE: ${{ secrets.BOT_COOKIE }}
+      run: |
+        python3 lcss5s.py
