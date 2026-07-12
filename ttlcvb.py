@@ -53,7 +53,7 @@ BOT_DEPTH = 18  # Tăng lại lên 15 cho tối ưu nước đi
 
 # ===== CẤU HÌNH TẠO BÀN =====
 BOT_BET_XU = 5000
-BOT_USE_CREATE_TABLE = False
+BOT_USE_CREATE_TABLE = True
 
 BOT_MATCH_DURATION = '5'     # Phút/ván
 BOT_TURN_DURATION = '30'     # Giây/nước
