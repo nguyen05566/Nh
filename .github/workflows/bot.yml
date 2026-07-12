@@ -26,11 +26,26 @@ jobs:
           fi
 
       - name: Download Pikafish
-        run: |
-          wget -O Pikafish.7z https://github.com/official-pikafish/Pikafish/releases/download/Pikafish-2026-01-02/Pikafish.2026-01-02.7z
-          7z x Pikafish.7z
-          chmod +x $(find . -type f -name pikafish | head -1)
-          echo "PIKAFISH_PATH=$(find . -type f -name pikafish | head -1)" >> $GITHUB_ENV
+  run: |
+    set -e
+
+    wget -O Pikafish.7z \
+      https://github.com/official-pikafish/Pikafish/releases/download/Pikafish-2026-01-02/Pikafish.2026-01-02.7z
+
+    7z x Pikafish.7z
+
+    ENGINE=$(find . -type f \( -iname "pikafish" -o -iname "pikafish.exe" \) | head -n 1)
+
+    if [ -z "$ENGINE" ]; then
+      echo "Không tìm thấy Pikafish sau khi giải nén."
+      find .
+      exit 1
+    fi
+
+    chmod +x "$ENGINE"
+    echo "PIKAFISH_PATH=$ENGINE" >> $GITHUB_ENV
+
+    echo "Engine: $ENGINE"$(find . -type f -name pikafish | head -1)" >> $GITHUB_ENV
 
       - name: Run bot
         run: python ttlcvb.py
