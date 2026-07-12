@@ -3,49 +3,66 @@ name: Run BOT
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: "*/30 * * * *"
 
 jobs:
   bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 355
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
+          cache: "pip"
 
-      - name: Install dependencies
+      - name: Install packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y p7zip-full wget
+          sudo apt-get install -y wget p7zip-full curl
+
           python -m pip install --upgrade pip
+
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
 
       - name: Download Pikafish
-  run: |
-    set -e
+        shell: bash
+        run: |
+          set -e
 
-    wget -O Pikafish.7z \
-      https://github.com/official-pikafish/Pikafish/releases/download/Pikafish-2026-01-02/Pikafish.2026-01-02.7z
+          wget -O pikafish.7z \
+          https://github.com/official-pikafish/Pikafish/releases/download/Pikafish-2026-01-02/Pikafish.2026-01-02.7z
 
-    7z x Pikafish.7z
+          7z x pikafish.7z
 
-    ENGINE=$(find . -type f \( -iname "pikafish" -o -iname "pikafish.exe" \) | head -n 1)
+          ENGINE=$(find . -type f \( -iname "pikafish" -o -iname "pikafish.exe" \) | head -n 1)
 
-    if [ -z "$ENGINE" ]; then
-      echo "Không tìm thấy Pikafish sau khi giải nén."
-      find .
-      exit 1
-    fi
+          if [ -z "$ENGINE" ]; then
+            echo "Không tìm thấy Pikafish!"
+            echo "Danh sách file:"
+            find .
+            exit 1
+          fi
 
-    chmod +x "$ENGINE"
-    echo "PIKAFISH_PATH=$ENGINE" >> $GITHUB_ENV
+          chmod +x "$ENGINE"
 
-    echo "Engine: $ENGINE"$(find . -type f -name pikafish | head -1)" >> $GITHUB_ENV
+          echo "PIKAFISH_PATH=$ENGINE" >> $GITHUB_ENV
 
-      - name: Run bot
-        run: python ttlcvb.py
+          echo "Engine:"
+          ls -l "$ENGINE"
+
+      - name: Verify engine
+        run: |
+          echo "PIKAFISH_PATH=$PIKAFISH_PATH"
+
+      - name: Run BOT
+        env:
+          PIKAFISH_PATH: ${{ env.PIKAFISH_PATH }}
+        run: |
+          python -u ttlcvb.py
