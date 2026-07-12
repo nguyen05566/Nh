@@ -18,10 +18,19 @@ jobs:
 
       - name: Install dependencies
         run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full wget
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
+
+      - name: Download Pikafish
+        run: |
+          wget -O Pikafish.7z https://github.com/official-pikafish/Pikafish/releases/download/Pikafish-2026-01-02/Pikafish.2026-01-02.7z
+          7z x Pikafish.7z
+          chmod +x $(find . -type f -name pikafish | head -1)
+          echo "PIKAFISH_PATH=$(find . -type f -name pikafish | head -1)" >> $GITHUB_ENV
 
       - name: Run bot
         run: python ttlcvb.py
