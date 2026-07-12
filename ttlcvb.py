@@ -606,7 +606,7 @@ class PikafishBot:
             if self._joining_table:
                 print("[PLACE] Đã chuyển vùng vào phòng chơi thành công.")
                 self._joining_table = False
-                self.in_game = True
+                self.in_game = False
                 
                 # --- Tự động bấm Sẵn sàng sau khi vào bàn 5 giây ---
                 def delay_initial_ready():
