@@ -55,7 +55,7 @@ TOKEN = 1238338868
 GAME_ID = 'xiangqi'
 PLACE_PATH = 'Lobby.xiangqi.0'
 
-BOT_DEPTH = 15  # Tăng lại lên 15 cho tối ưu nước đi
+BOT_DEPTH = 19  # Tăng lại lên 15 cho tối ưu nước đi
 
 # ===== CẤU HÌNH TẠO BÀN =====
 BOT_BET_XU = 50000
