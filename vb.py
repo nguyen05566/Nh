@@ -58,7 +58,7 @@ PLACE_PATH = 'Lobby.xiangqi.0'
 BOT_DEPTH = 19  # Tăng lại lên 15 cho tối ưu nước đi
 
 # ===== CẤU HÌNH TẠO BÀN =====
-BOT_BET_XU = 50000
+BOT_BET_XU = 1000
 BOT_USE_CREATE_TABLE = True
 
 BOT_MATCH_DURATION = '5'     # Phút/ván
