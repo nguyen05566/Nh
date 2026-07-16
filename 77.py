@@ -45,10 +45,10 @@ TOKEN = 1238338868
 GAME_ID = 'xiangqi'
 PLACE_PATH = 'Lobby.xiangqi.0'
 
-BOT_DEPTH = 10  
+BOT_DEPTH = 18  
 
 # ===== CẤU HÌNH TẠO BÀN =====
-BOT_BET_XU = 5000
+BOT_BET_XU = 10000
 BOT_USE_CREATE_TABLE = True
 
 BOT_MATCH_DURATION = '5'     # Phút/ván
