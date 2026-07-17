@@ -45,7 +45,7 @@ TOKEN = 1238338868
 GAME_ID = 'xiangqi'
 PLACE_PATH = 'Lobby.xiangqi.0'
 
-BOT_DEPTH = 23 
+BOT_DEPTH = 17
 
 # ===== CẤU HÌNH TẠO BÀN =====
 BOT_BET_XU = 5000
