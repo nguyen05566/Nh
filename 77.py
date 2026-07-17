@@ -807,7 +807,7 @@ class PikafishBot:
         while True:
             try:
                 if self.connected and self.board.is_playing:
-                    if time.time() - self.last_action_timestamp > 40:
+                    if time.time() - self.last_action_timestamp > 180:
                         print("[SYSTEM] ⚠️ Quá 40 giây không có thay đổi bàn cờ! Nghi ngờ treo mạng. Chủ động ngắt kết nối để làm mới...")
                         if self.ws:
                             self.ws.close()
