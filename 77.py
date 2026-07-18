@@ -301,7 +301,7 @@ class PikafishBot:
             else:
                 print("[ENGINE] ⚠️ Không tìm thấy file NNUE, chạy không có neural net.")
             
-            self._fsf_cmd("setoption name UseNNUE value false")
+            self._fsf_cmd("setoption name UseNNUE value true")
             self._fsf_cmd("isready")
             self._fsf_wait_for("readyok")
             self.engine = True
