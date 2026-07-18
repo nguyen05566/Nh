@@ -251,7 +251,7 @@ class PikafishBot:
                 self._fsf_cmd(f"setoption name EvalFile value {nnue_path}")
                 self._fsf_cmd("setoption name UseNNUE value true")
             else:
-                self._fsf_cmd("setoption name UseNNUE value false")
+                self._fsf_cmd("setoption name UseNNUE value true")
             self._fsf_cmd("isready")
             self._fsf_wait_for("readyok")
             self.engine = True
