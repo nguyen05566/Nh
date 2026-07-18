@@ -214,6 +214,8 @@ class PikafishBot:
         self.fixed_pawn_positions = set()
         self.last_action_timestamp = time.time()
         self._latest_bestmove = None
+        self._mate_status = None
+        self._mate_regex = re.compile(r"score mate (-?\d+)")
         self._init_engine()
 
     def _init_engine(self):
@@ -246,6 +248,17 @@ class PikafishBot:
                         line = proc.stdout.readline()
                         if not line: break
                         line_str = line.strip()
+                        
+                        # Quét tìm thông tin score mate để đón trước thế cờ tàn kết thúc
+                        if "score mate" in line_str:
+                            match = self._mate_regex.search(line_str)
+                            if match:
+                                val = int(match.group(1))
+                                if val > 0:
+                                    self._mate_status = f"WIN_IN_{val}"
+                                elif val < 0:
+                                    self._mate_status = f"LOSE_IN_{abs(val)}"
+                        
                         if line_str.startswith("bestmove"):
                             self._latest_bestmove = line_str
                 except: pass
@@ -293,16 +306,13 @@ class PikafishBot:
     def _read_bestmove(self, timeout=30):
         _go_start = time.time()
         self._latest_bestmove = None # Làm sạch biến trước khi tính
+        self._mate_status = None     # Làm sạch trạng thái sát cục cũ
         
         while True:
             if self._engine_proc.poll() is not None: return None
             
-            # Lấy nước đi ngay lập tức từ luồng hút dữ liệu ngầm khi có kết quả
             if self._latest_bestmove:
-                parts = self._latest_bestmove.split()
-                if len(parts) >= 2 and parts[1] not in ["(none)", "0000"]: 
-                    return parts[1]
-                break
+                return self._latest_bestmove
             
             # HỆ THỐNG CỨU CHÁY KHI QUÁ THỜI GIAN
             if time.time() - _go_start > timeout:
@@ -310,15 +320,12 @@ class PikafishBot:
                 self._fsf_cmd("stop")
                 time.sleep(0.5)
                 if self._latest_bestmove:
-                    em_parts = self._latest_bestmove.split()
-                    if len(em_parts) >= 2 and em_parts[1] not in ["(none)", "0000"]:
-                        return em_parts[1]
+                    return self._latest_bestmove
                 break
             time.sleep(0.05) # Tránh lặp quá nhanh làm nghẽn CPU luồng chính
         return None
 
     def _get_move_avoiding_fixed(self, fen, moves, fixed_positions):
-        # Thiết lập tạm thời MultiPV để tìm nhiều nhánh
         self._fsf_cmd("setoption name MultiPV value 5")
         self._fsf_cmd("isready")
         time.sleep(0.1)
@@ -328,9 +335,9 @@ class PikafishBot:
         self._fsf_cmd(pos_cmd)
         
         self._latest_bestmove = None
+        self._mate_status = None
         self._fsf_cmd(f"go depth {self.depth}")
         
-        # Vì xử lý luồng ngầm nên chúng ta đợi tối đa 5s để gom nước đi
         _wait_start = time.time()
         while time.time() - _wait_start < 5:
             if self._latest_bestmove: break
@@ -341,9 +348,7 @@ class PikafishBot:
         self._fsf_cmd("setoption name MultiPV value 1")
         
         if self._latest_bestmove:
-            parts = self._latest_bestmove.split()
-            if len(parts) >= 2 and parts[1] not in ["(none)", "0000"]:
-                return parts[1]
+            return self._latest_bestmove
         return None
 
     def connect(self):
@@ -668,13 +673,42 @@ class PikafishBot:
 
         fen, moves = self.board.get_current_fen()
         fixed = self.fixed_pawn_positions if self.fixed_pawn_positions else None
-        best_move = self.get_best_move(fen, moves, fixed_positions=fixed)
         
-        if best_move and best_move not in ["(none)", "0000"]:
+        # Nhận kết quả nguyên bản từ dòng lệnh của Pikafish
+        raw_bestmove_line = self.get_best_move(fen, moves, fixed_positions=fixed)
+        if not raw_bestmove_line: return
+
+        parts = raw_bestmove_line.split()
+        if len(parts) < 2: return
+        best_move = parts[1]
+
+        # XỬ LÝ KỊCH BẢN KHI BỊ CHẠM ĐÁY (Pikafish không tìm thấy bất kỳ nước đi nào hợp lệ)
+        if best_move in ["(none)", "0000"]:
+            print("\n[HỆ THỐNG TÀN CUỘC] ⚠️ Pikafish báo: bestmove (none) - Không có nước đi.")
+            
+            if self._mate_status and self._mate_status.startswith("LOSE_"):
+                print(f"-> Thua cuộc: Bạn đã rơi vào thế sát cục tuyệt vọng ({self._mate_status}).")
+                print("-> Hành động: Chờ GameOver hệ thống xử lý hoặc gửi gói tin hàng.")
+                # Nếu giao thức GameVH hỗ trợ đầu hàng, bạn có thể gọi hàm gửi tại đây
+                # self.send_message("SURRENDER")
+            else:
+                print("-> Hòa cuộc: Thế cờ hết nước đi hợp lệ (Stalemate).")
+                print("-> Hành động: Dừng di chuyển, đứng im chờ hệ thống GameVH tự động kết toán.")
+            
+            self.board.is_my_turn = False
+            return
+
+        # XỬ LÝ KỊCH BẢN ĐANG TRÊN ĐÀ THẮNG SÁT CỤC
+        if self._mate_status and self._mate_status.startswith("WIN_"):
+            print(f"\n[ƯU THẾ] 🔥 Cơ hội dứt điểm: Phát hiện nước cờ sát cục sau {self._mate_status.split('_')[-1]} nước!")
+            
+        # Gửi nước đi hợp lệ lên GameVH (Kể cả khi đang dồn thắng sát cục)
+        if best_move:
             try:
                 source_pos, target_pos = self.board.engine_move_to_pos(best_move)
                 time.sleep(1)
                 if self.board.is_my_turn and self.board.is_playing:
+                    print(f"-> Hành động: Gửi nước kết liễu: {best_move}")
                     self.send_play(source_pos, target_pos)
             except Exception as e: print(f"[BOT ERROR] Dịch tọa độ lỗi: {e}")
 
