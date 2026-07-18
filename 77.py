@@ -38,7 +38,7 @@ TOKEN = 1238338868
 GAME_ID = 'xiangqi'
 PLACE_PATH = 'Lobby.xiangqi.0'
 
-BOT_DEPTH = 17
+BOT_DEPTH = 19
 BOT_BET_XU = 5000
 BOT_USE_CREATE_TABLE = True
 BOT_MATCH_DURATION = '10'
@@ -323,11 +323,11 @@ class PikafishBot:
             threading.Thread(target=consume_stdout_and_filter, args=(self._engine_proc,), daemon=True).start()
 
             self._fsf_cmd("uci")
-            self._fsf_cmd("setoption name Threads value 4")
+            self._fsf_cmd("setoption name Threads value 2")
             self._fsf_cmd("setoption name Hash value 256")
             
             # Kích hoạt MultiPV để Pikafish xuất nhiều luồng nước đi cùng lúc lên RAM
-            self._fsf_cmd("setoption name MultiPV value 4")
+            self._fsf_cmd("setoption name MultiPV value 3")
             
             time.sleep(1)
             
