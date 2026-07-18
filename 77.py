@@ -351,7 +351,7 @@ class PikafishBot:
             self._fsf_cmd(pos_cmd)
             
             # ÉP TỐC ĐỘ: Bỏ qua go depth chậm chạp, chỉ cho phép Engine quét RAM trong 1200 mili-giây
-            self._fsf_cmd("go movetime 1200") 
+            self._fsf_cmd("go movetime 2200") 
             return self._read_bestmove()
         except Exception as e: print(f"[ENGINE] Lỗi tính toán: {e}")
         return None
