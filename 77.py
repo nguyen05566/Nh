@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Xiangqi Bot - gamevh.net (CREATE_TABLE Edition)
+Xiangqi Bot - gamevh.net (Bản Hoàn Chỉnh Bất Tử Engine)
 """
 
 import struct
@@ -38,7 +38,7 @@ TOKEN = 1238338868
 GAME_ID = 'xiangqi'
 PLACE_PATH = 'Lobby.xiangqi.0'
 
-BOT_DEPTH = 15
+BOT_DEPTH = 19
 BOT_BET_XU = 5000
 BOT_USE_CREATE_TABLE = True
 BOT_MATCH_DURATION = '10'
@@ -229,7 +229,7 @@ class PikafishBot:
             self._engine_proc = subprocess.Popen(
                 [pikafish_path], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1
             )
-            # FIX LỖI 1: Giải phóng bộ đệm stderr
+            # DỌN DẸP LIÊN TỤC 64KB STDERR CHỐNG TREO ENGINE
             def consume_stderr(proc):
                 try:
                     while proc.poll() is None:
@@ -239,7 +239,7 @@ class PikafishBot:
 
             self._fsf_cmd("uci")
             
-            # --- CẤU HÌNH SỨC MẠNH CHO KAGGLE / TERMUX ---
+            # --- TỐI ƯU CẤU HÌNH PHẦN CỨNG THREADS VÀ HASH ---
             self._fsf_cmd("setoption name Threads value 4")
             self._fsf_cmd("setoption name Hash value 256")
             
@@ -251,49 +251,62 @@ class PikafishBot:
                 self._fsf_cmd(f"setoption name EvalFile value {nnue_path}")
                 self._fsf_cmd("setoption name UseNNUE value true")
             else:
-                self._fsf_cmd("setoption name UseNNUE value true")
+                self._fsf_cmd("setoption name UseNNUE value false")
             self._fsf_cmd("isready")
             self._fsf_wait_for("readyok")
             self.engine = True
             print(f"[ENGINE] ✅ Khởi động thành công.")
         except Exception as e:
-            print(f"[ENGINE] ❌ Lỗi: {e}")
+            print(f"[ENGINE] ❌ Lỗi khởi tạo: {e}")
 
     def _fsf_cmd(self, text):
-        if getattr(self, '_engine_proc', None):
+        if getattr(self, '_engine_proc', None) and self._engine_proc.poll() is None:
             self._engine_proc.stdin.write(text + "\n")
             self._engine_proc.stdin.flush()
 
     def _fsf_wait_for(self, token, timeout=10):
         proc = getattr(self, '_engine_proc', None)
         start = time.time()
-        while proc:
+        while proc and proc.poll() is None:
             line = proc.stdout.readline().strip()
             if token in line: return line
             if time.time() - start > timeout: raise RuntimeError(f"Timeout waiting for {token}")
 
     def get_best_move(self, fen, moves, fixed_positions=None):
         try:
-            if not getattr(self, '_engine_proc', None): return None
+            if not getattr(self, '_engine_proc', None) or self._engine_proc.poll() is not None: return None
             if fixed_positions: return self._get_move_avoiding_fixed(fen, moves, fixed_positions)
             pos_cmd = f"position fen {fen}"
             if moves: pos_cmd += " moves " + " ".join(moves)
             self._fsf_cmd(pos_cmd)
             self._fsf_cmd(f"go depth {self.depth}")
             return self._read_bestmove()
-        except Exception as e: print(f"[ENGINE] Lỗi tính: {e}")
+        except Exception as e: print(f"[ENGINE] Lỗi tính toán: {e}")
         return None
 
     def _read_bestmove(self, timeout=30):
         _go_start = time.time()
         while True:
+            if self._engine_proc.poll() is not None: return None
             line = self._engine_proc.stdout.readline().strip()
+            
             if line.startswith("bestmove"):
                 parts = line.split()
                 if len(parts) >= 2 and parts[1] not in ["(none)", "0000"]: return parts[1]
                 break
+            
+            # TỰ ĐỘNG GỬI LỆNH STOP KHI QUÁ GIỜ ĐỂ ÉP RA NƯỚC ĐI TẠM THỜI (KHÔNG TẮT ENGINE)
             if time.time() - _go_start > timeout:
+                print(f"[ENGINE] ⚠️ Quá {timeout} giây! Ép Pikafish dừng và nhả nước đi hiện tại...")
                 self._fsf_cmd("stop")
+                for _ in range(20):
+                    if self._engine_proc.poll() is not None: break
+                    emergency_line = self._engine_proc.stdout.readline().strip()
+                    if emergency_line.startswith("bestmove"):
+                        em_parts = emergency_line.split()
+                        if len(em_parts) >= 2 and em_parts[1] not in ["(none)", "0000"]:
+                            print(f"[ENGINE] ⚡ Đã lấy được nước đi cứu cháy: {em_parts[1]}")
+                            return em_parts[1]
                 break
         return None
 
@@ -309,6 +322,7 @@ class PikafishBot:
         candidates = []
         _go_start = time.time()
         while True:
+            if self._engine_proc.poll() is not None: break
             line = self._engine_proc.stdout.readline().strip()
             if line.startswith("bestmove"): break
             if "multipv" in line and " pv " in line:
@@ -320,7 +334,7 @@ class PikafishBot:
                         while len(candidates) < mpv_num: candidates.append(None)
                         candidates[mpv_num - 1] = first_move
                 except: pass
-            if time.time() - _go_start > 20:
+            if time.time() - _go_start > 25:
                 self._fsf_cmd("stop")
                 break
         self._fsf_cmd("setoption name MultiPV value 1")
@@ -440,9 +454,8 @@ class PikafishBot:
         self.send_message("PLAY", bytes(data))
 
     def send_ready(self, is_ready=1):
-        # KHẮC PHỤC LỖI GỬI NHẦM READY: Tuyệt đối không gửi READY lên server nếu ván đấu đang diễn ra.
-        if self.board.is_playing:
-            return
+        # AN TOÀN CHẶN READY: Chỉ cho phép gửi ready khi đang CHƯA tham gia trận đấu chính thức
+        if self.board.is_playing: return
         print("[GAME] ⏳ Gửi trạng thái Sẵn sàng (READY)...")
         data = bytearray()
         data.extend(self.conn.pack_byte(is_ready))
@@ -482,7 +495,6 @@ class PikafishBot:
                 self._joining_table = False
                 self.in_game = True
                 self.last_action_timestamp = time.time()
-                
                 def delay_initial_ready():
                     time.sleep(5.0)  
                     self.send_ready(1)
@@ -533,9 +545,9 @@ class PikafishBot:
             if player_id == CURRENT_PLAYER_ID: 
                 self.board.my_slot_id = slot_id
             else:
-                # SỬA LỖI GỬI READY SAI: Chỉ tự gửi ready khi trạng thái trận đấu CHƯA bắt đầu chơi.
+                # SỬA LỖI READY: Chỉ tự ready khi game chưa khởi chạy
                 if player_id > 0 and not self.board.is_playing:
-                    print(f"[GAME] 👤 Đối thủ vào bàn. Chuẩn bị Ready...")
+                    print(f"[GAME] 👤 Đối thủ vào bàn. Đang chờ Ready...")
                     def delay_ready_on_player():
                         time.sleep(5.0)  
                         self.send_ready(1)
@@ -543,8 +555,7 @@ class PikafishBot:
         except: pass
 
     def _handle_start_match(self, msg):
-        print(f"[GAME] 🎮 Khởi tạo ván cờ mới!")
-        # FIX LỖI 3: Làm sạch hoàn toàn bộ nhớ đệm trận cũ
+        print(f"[GAME] 🎮 Bắt đầu trận đấu mới!")
         self.board.reset()
         self.fixed_pawn_positions.clear()
         
@@ -615,11 +626,9 @@ class PikafishBot:
             target_pos = msg.read_byte()
             engine_move = self.board.pos_to_engine_move(source_pos, target_pos)
             self.last_action_timestamp = time.time()
-
             if not self.board.move_history or self.board.move_history[-1] != engine_move:
                 self.board.move_history.append(engine_move)
-
-            # KHẮC PHỤC LỖI ĐỨNG HÌNH: Dựa hoàn toàn vào tín hiệu SET_TURN của server để đi quân thay vì tự đoán turn qua toán học chẵn lẻ dễ lỗi.
+            # Không tự đoán turn ở đây, việc đi quân sẽ hoàn toàn do SET_TURN kích hoạt để tránh lệch nhịp
         except Exception as e: print(f"[MOVE ERROR] {e}")
 
     def _handle_play_response(self, msg):
@@ -634,8 +643,6 @@ class PikafishBot:
                 was_my_turn = self.board.is_my_turn
                 self.board.is_my_turn = (slot_id == self.board.my_slot_id)
                 self.last_action_timestamp = time.time()
-                
-                # FIX LỖI 2: Đảm bảo khi nhận được set_turn trùng khớp, bot sẽ kích hoạt tính toán lập tức.
                 if self.board.is_my_turn and not was_my_turn:
                     threading.Thread(target=self._make_auto_move, daemon=True).start()
         except: pass
@@ -649,6 +656,14 @@ class PikafishBot:
         self.in_game = True  
         self._joining_table = False
         self.last_action_timestamp = time.time()
+        
+        # GỬI LỆNH LÀM SẠCH BỘ NHỚ LỊCH SỬ MÀ KHÔNG LÀM NGẮT KẾT NỐI PIKAFISH
+        if getattr(self, '_engine_proc', None) and self._engine_proc.poll() is None:
+            self._fsf_cmd("ucinewgame")
+            self._fsf_cmd("isready")
+            try: self._fsf_wait_for("readyok", timeout=5)
+            except: pass
+
         def delay_ready():
             time.sleep(5.0)
             self.send_ready(1)
@@ -656,9 +671,17 @@ class PikafishBot:
 
     def _make_auto_move(self):
         if not self.board.is_my_turn or not self.board.is_playing: return
+        
+        # KIỂM TRA SỰ SỐNG CỦA PIKAFISH - TỰ ĐỘNG KHỞI CHẠY LẠI NẾU BỊ HỆ THỐNG KILL NGẦM
+        if not getattr(self, '_engine_proc', None) or self._engine_proc.poll() is not None:
+            print("[ENGINE] ⚠️ Phát hiện Pikafish bị sập ngầm! Đang khôi phục lại tiến trình...")
+            self._init_engine()
+            if not self.engine: return
+
         fen, moves = self.board.get_current_fen()
         fixed = self.fixed_pawn_positions if self.fixed_pawn_positions else None
         best_move = self.get_best_move(fen, moves, fixed_positions=fixed)
+        
         if best_move and best_move not in ["(none)", "0000"]:
             try:
                 source_pos, target_pos = self.board.engine_move_to_pos(best_move)
@@ -683,10 +706,10 @@ class PikafishBot:
         print("[BOT] Khởi chạy hệ thống giám sát tự động...")
         while True:
             try:
-                # Logic giám sát mạng chống treo 180 giây của bạn
+                # Hệ thống giám sát mạng chống treo 180 giây
                 if self.connected and self.board.is_playing:
                     if time.time() - self.last_action_timestamp > 180:
-                        print("[SYSTEM] ⚠️ Quá 180 giây không phản hồi. Ngắt kết nối...")
+                        print("[SYSTEM] ⚠️ Quá 180 giây không có tín hiệu mới. Đang Reset kết nối websocket...")
                         if self.ws: self.ws.close()
                         time.sleep(2)
 
@@ -720,7 +743,9 @@ class PikafishBot:
     def cleanup(self):
         proc = getattr(self, '_engine_proc', None)
         if proc:
-            try: proc.stdin.write("quit\n"); proc.stdin.flush(); proc.wait(timeout=2)
+            try: 
+                if proc.poll() is None:
+                    proc.stdin.write("quit\n"); proc.stdin.flush(); proc.wait(timeout=2)
             except:
                 try: proc.terminate()
                 except: pass
