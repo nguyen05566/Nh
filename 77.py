@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Xiangqi Bot - gamevh.net (Bản Hoàn Chỉnh Bất Tử Engine)
+Xiangqi Bot - gamevh.net (Bản Hoàn Chỉnh Bất Tử - Khử Nghẽn Cờ Tàn)
 """
 
 import struct
@@ -38,7 +38,7 @@ TOKEN = 1238338868
 GAME_ID = 'xiangqi'
 PLACE_PATH = 'Lobby.xiangqi.0'
 
-BOT_DEPTH = 18
+BOT_DEPTH = 19
 BOT_BET_XU = 5000
 BOT_USE_CREATE_TABLE = True
 BOT_MATCH_DURATION = '10'
@@ -213,6 +213,7 @@ class PikafishBot:
         self._bet_amts_loaded = False
         self.fixed_pawn_positions = set()
         self.last_action_timestamp = time.time()
+        self._latest_bestmove = None
         self._init_engine()
 
     def _init_engine(self):
@@ -229,7 +230,8 @@ class PikafishBot:
             self._engine_proc = subprocess.Popen(
                 [pikafish_path], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1
             )
-            # DỌN DẸP LIÊN TỤC 64KB STDERR CHỐNG TREO ENGINE
+            
+            # 1. Luồng dọn dẹp STDERR (Chống kẹt 64KB hệ thống)
             def consume_stderr(proc):
                 try:
                     while proc.poll() is None:
@@ -237,13 +239,26 @@ class PikafishBot:
                 except: pass
             threading.Thread(target=consume_stderr, args=(self._engine_proc,), daemon=True).start()
 
+            # 2. Luồng dọn dẹp STDOUT + Bộ lọc (Giải quyết triệt để kẹt log cờ tàn)
+            def consume_stdout_and_filter(proc):
+                try:
+                    while proc.poll() is None:
+                        line = proc.stdout.readline()
+                        if not line: break
+                        line_str = line.strip()
+                        if line_str.startswith("bestmove"):
+                            self._latest_bestmove = line_str
+                except: pass
+            threading.Thread(target=consume_stdout_and_filter, args=(self._engine_proc,), daemon=True).start()
+
             self._fsf_cmd("uci")
             
-            # --- TỐI ƯU CẤU HÌNH PHẦN CỨNG THREADS VÀ HASH ---
+            # --- CẤU HÌNH TỐI ƯU CƠ CHẾ PHẦN CỨNG ---
             self._fsf_cmd("setoption name Threads value 4")
             self._fsf_cmd("setoption name Hash value 256")
             
-            self._fsf_wait_for("uciok")
+            time.sleep(1) # Độ trễ an toàn chờ khởi động ngầm
+            
             nnue_path = os.path.expanduser("~/pikafish.nnue")
             if not os.path.isfile(nnue_path):
                 nnue_path = os.path.join(os.path.dirname(pikafish_path), "pikafish.nnue")
@@ -253,9 +268,8 @@ class PikafishBot:
             else:
                 self._fsf_cmd("setoption name UseNNUE value false")
             self._fsf_cmd("isready")
-            self._fsf_wait_for("readyok")
             self.engine = True
-            print(f"[ENGINE] ✅ Khởi động thành công.")
+            print(f"[ENGINE] ✅ Khởi động thành công & Luồng xử lý chống nghẽn đã sẵn sàng.")
         except Exception as e:
             print(f"[ENGINE] ❌ Lỗi khởi tạo: {e}")
 
@@ -263,14 +277,6 @@ class PikafishBot:
         if getattr(self, '_engine_proc', None) and self._engine_proc.poll() is None:
             self._engine_proc.stdin.write(text + "\n")
             self._engine_proc.stdin.flush()
-
-    def _fsf_wait_for(self, token, timeout=10):
-        proc = getattr(self, '_engine_proc', None)
-        start = time.time()
-        while proc and proc.poll() is None:
-            line = proc.stdout.readline().strip()
-            if token in line: return line
-            if time.time() - start > timeout: raise RuntimeError(f"Timeout waiting for {token}")
 
     def get_best_move(self, fen, moves, fixed_positions=None):
         try:
@@ -286,70 +292,59 @@ class PikafishBot:
 
     def _read_bestmove(self, timeout=30):
         _go_start = time.time()
+        self._latest_bestmove = None # Làm sạch biến trước khi tính
+        
         while True:
             if self._engine_proc.poll() is not None: return None
-            line = self._engine_proc.stdout.readline().strip()
             
-            if line.startswith("bestmove"):
-                parts = line.split()
-                if len(parts) >= 2 and parts[1] not in ["(none)", "0000"]: return parts[1]
+            # Lấy nước đi ngay lập tức từ luồng hút dữ liệu ngầm khi có kết quả
+            if self._latest_bestmove:
+                parts = self._latest_bestmove.split()
+                if len(parts) >= 2 and parts[1] not in ["(none)", "0000"]: 
+                    return parts[1]
                 break
             
-            # TỰ ĐỘNG GỬI LỆNH STOP KHI QUÁ GIỜ ĐỂ ÉP RA NƯỚC ĐI TẠM THỜI (KHÔNG TẮT ENGINE)
+            # HỆ THỐNG CỨU CHÁY KHI QUÁ THỜI GIAN
             if time.time() - _go_start > timeout:
-                print(f"[ENGINE] ⚠️ Quá {timeout} giây! Ép Pikafish dừng và nhả nước đi hiện tại...")
+                print(f"[ENGINE] ⚠️ Quá {timeout} giây! Gửi stop để lấy nước đi tạm thời...")
                 self._fsf_cmd("stop")
-                for _ in range(20):
-                    if self._engine_proc.poll() is not None: break
-                    emergency_line = self._engine_proc.stdout.readline().strip()
-                    if emergency_line.startswith("bestmove"):
-                        em_parts = emergency_line.split()
-                        if len(em_parts) >= 2 and em_parts[1] not in ["(none)", "0000"]:
-                            print(f"[ENGINE] ⚡ Đã lấy được nước đi cứu cháy: {em_parts[1]}")
-                            return em_parts[1]
+                time.sleep(0.5)
+                if self._latest_bestmove:
+                    em_parts = self._latest_bestmove.split()
+                    if len(em_parts) >= 2 and em_parts[1] not in ["(none)", "0000"]:
+                        return em_parts[1]
                 break
+            time.sleep(0.05) # Tránh lặp quá nhanh làm nghẽn CPU luồng chính
         return None
 
     def _get_move_avoiding_fixed(self, fen, moves, fixed_positions):
+        # Thiết lập tạm thời MultiPV để tìm nhiều nhánh
         self._fsf_cmd("setoption name MultiPV value 5")
         self._fsf_cmd("isready")
-        try: self._fsf_wait_for("readyok", timeout=5)
-        except: pass
+        time.sleep(0.1)
+        
         pos_cmd = f"position fen {fen}"
         if moves: pos_cmd += " moves " + " ".join(moves)
         self._fsf_cmd(pos_cmd)
+        
+        self._latest_bestmove = None
         self._fsf_cmd(f"go depth {self.depth}")
-        candidates = []
-        _go_start = time.time()
-        while True:
-            if self._engine_proc.poll() is not None: break
-            line = self._engine_proc.stdout.readline().strip()
-            if line.startswith("bestmove"): break
-            if "multipv" in line and " pv " in line:
-                parts = line.split()
-                try:
-                    mpv_num = int(parts[parts.index("multipv") + 1])
-                    first_move = parts[parts.index("pv") + 1]
-                    if first_move not in ["(none)", "0000"]:
-                        while len(candidates) < mpv_num: candidates.append(None)
-                        candidates[mpv_num - 1] = first_move
-                except: pass
-            if time.time() - _go_start > 25:
-                self._fsf_cmd("stop")
-                break
+        
+        # Vì xử lý luồng ngầm nên chúng ta đợi tối đa 5s để gom nước đi
+        _wait_start = time.time()
+        while time.time() - _wait_start < 5:
+            if self._latest_bestmove: break
+            time.sleep(0.1)
+            
+        self._fsf_cmd("stop")
+        time.sleep(0.2)
         self._fsf_cmd("setoption name MultiPV value 1")
-        for move in candidates:
-            if move and not self._move_involves_fixed(move, fixed_positions): return move
-        return candidates[0] if candidates and candidates[0] else None
-
-    def _move_involves_fixed(self, engine_move, fixed_positions):
-        try:
-            s_col, s_rank = ord(engine_move[0]) - ord('a'), int(engine_move[1])
-            t_col, t_rank = ord(engine_move[2]) - ord('a'), int(engine_move[3])
-            s_row = s_rank if self.board.is_red else 9 - s_rank
-            t_row = t_rank if self.board.is_red else 9 - t_rank
-            return (s_row * 9 + s_col) in fixed_positions or (t_row * 9 + t_col) in fixed_positions
-        except: return False
+        
+        if self._latest_bestmove:
+            parts = self._latest_bestmove.split()
+            if len(parts) >= 2 and parts[1] not in ["(none)", "0000"]:
+                return parts[1]
+        return None
 
     def connect(self):
         import websocket
@@ -454,7 +449,6 @@ class PikafishBot:
         self.send_message("PLAY", bytes(data))
 
     def send_ready(self, is_ready=1):
-        # AN TOÀN CHẶN READY: Chỉ cho phép gửi ready khi đang CHƯA tham gia trận đấu chính thức
         if self.board.is_playing: return
         print("[GAME] ⏳ Gửi trạng thái Sẵn sàng (READY)...")
         data = bytearray()
@@ -545,7 +539,6 @@ class PikafishBot:
             if player_id == CURRENT_PLAYER_ID: 
                 self.board.my_slot_id = slot_id
             else:
-                # SỬA LỖI READY: Chỉ tự ready khi game chưa khởi chạy
                 if player_id > 0 and not self.board.is_playing:
                     print(f"[GAME] 👤 Đối thủ vào bàn. Đang chờ Ready...")
                     def delay_ready_on_player():
@@ -628,7 +621,6 @@ class PikafishBot:
             self.last_action_timestamp = time.time()
             if not self.board.move_history or self.board.move_history[-1] != engine_move:
                 self.board.move_history.append(engine_move)
-            # Không tự đoán turn ở đây, việc đi quân sẽ hoàn toàn do SET_TURN kích hoạt để tránh lệch nhịp
         except Exception as e: print(f"[MOVE ERROR] {e}")
 
     def _handle_play_response(self, msg):
@@ -657,12 +649,9 @@ class PikafishBot:
         self._joining_table = False
         self.last_action_timestamp = time.time()
         
-        # GỬI LỆNH LÀM SẠCH BỘ NHỚ LỊCH SỬ MÀ KHÔNG LÀM NGẮT KẾT NỐI PIKAFISH
         if getattr(self, '_engine_proc', None) and self._engine_proc.poll() is None:
             self._fsf_cmd("ucinewgame")
             self._fsf_cmd("isready")
-            try: self._fsf_wait_for("readyok", timeout=5)
-            except: pass
 
         def delay_ready():
             time.sleep(5.0)
@@ -672,9 +661,8 @@ class PikafishBot:
     def _make_auto_move(self):
         if not self.board.is_my_turn or not self.board.is_playing: return
         
-        # KIỂM TRA SỰ SỐNG CỦA PIKAFISH - TỰ ĐỘNG KHỞI CHẠY LẠI NẾU BỊ HỆ THỐNG KILL NGẦM
         if not getattr(self, '_engine_proc', None) or self._engine_proc.poll() is not None:
-            print("[ENGINE] ⚠️ Phát hiện Pikafish bị sập ngầm! Đang khôi phục lại tiến trình...")
+            print("[ENGINE] ⚠️ Phát hiện Pikafish bị sập ngầm! Đang khôi phục lại...")
             self._init_engine()
             if not self.engine: return
 
@@ -706,10 +694,9 @@ class PikafishBot:
         print("[BOT] Khởi chạy hệ thống giám sát tự động...")
         while True:
             try:
-                # Hệ thống giám sát mạng chống treo 180 giây
                 if self.connected and self.board.is_playing:
                     if time.time() - self.last_action_timestamp > 180:
-                        print("[SYSTEM] ⚠️ Quá 180 giây không có tín hiệu mới. Đang Reset kết nối websocket...")
+                        print("[SYSTEM] ⚠️ Quá 180 giây không hoạt động. Đang Reset kết nối...")
                         if self.ws: self.ws.close()
                         time.sleep(2)
 
