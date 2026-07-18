@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Xiangqi Bot - gamevh.net (Bản Hoàn Chỉnh - Tự Học Xu Hướng Điểm Số Trên RAM - Tốc Độ Phản Xạ Cao)
+Xiangqi Bot - gamevh.net (Bản Hoàn Chỉnh - Sửa Lỗi Sát Cục RAM - Tốc Độ Phản Xạ Cao)
 """
 
 import struct
@@ -195,15 +195,31 @@ class XiangqiBoardTracker:
         self.is_red = (self.my_slot_id == first_turn_slot_id)
 
 class TrendAnalyzer:
-    """Bộ não phân tích RAM thu thập chuỗi nước đi và tối ưu hóa theo xu hướng điểm số thực chiến"""
+    """Bộ não phân tích dữ liệu RAM: Hỗ trợ quét kép Sát cục (Mate) và Điểm số xu hướng (CP)"""
     def __init__(self):
         self.pv_ram_cache = {}
         self.info_regex = re.compile(r"info .* score cp (-?\d+) .* pv (.+)")
+        self.mate_regex = re.compile(r"info .* score mate (-?\d+) .* pv (.+)")
 
     def clear(self):
         self.pv_ram_cache.clear()
 
     def parse_line(self, line_str):
+        # 1. Quét thế trận sát cục (Mate) trước để tránh Bot đi vòng vo khi sắp thắng
+        mate_match = self.mate_regex.search(line_str)
+        if mate_match:
+            mate_score = int(mate_match.group(1))
+            pv_line = mate_match.group(2).split()
+            if pv_line:
+                first_move = pv_line[0]
+                self.pv_ram_cache[first_move] = {
+                    "current_score": 99999 if mate_score > 0 else -99999,
+                    "mate_in": mate_score,
+                    "pv_chain": pv_line
+                }
+                return
+
+        # 2. Nếu không có sát cục, tiến hành phân tích điểm cp thông thường
         match = self.info_regex.search(line_str)
         if match:
             score = int(match.group(1))
@@ -212,6 +228,7 @@ class TrendAnalyzer:
                 first_move = pv_line[0]
                 self.pv_ram_cache[first_move] = {
                     "current_score": score,
+                    "mate_in": None,
                     "pv_chain": pv_line
                 }
 
@@ -219,28 +236,34 @@ class TrendAnalyzer:
         if not self.pv_ram_cache:
             return None
 
+        # ƯU TIÊN TUYỆT ĐỐI: Có nhánh báo sát cục thắng (mate dương), xuất quân dứt điểm ngay!
+        for move, data in self.pv_ram_cache.items():
+            if data["mate_in"] is not None and data["mate_in"] > 0:
+                print(f"[RAM-MATE] 🔥 Phát hiện nhánh sát cục tuyệt đối! Dứt điểm ngay: {move}")
+                return move
+
         best_move = None
         avg_score = sum(d["current_score"] for d in self.pv_ram_cache.values()) / len(self.pv_ram_cache)
         is_negative = avg_score < 0
 
         if is_negative:
-            # THẾ YẾU (ĐIỂM ÂM): Lọc tìm nước đi giảm thiểu thiệt hại nhiều nhất (Tiến dần về 0)
+            # THẾ YẾU (ĐIỂM ÂM): Chọn nhánh có điểm âm thấp nhất (giảm thiểu suy thoái)
             max_recovery = -999999
             for move, data in self.pv_ram_cache.items():
                 recovery_rate = data["current_score"] 
                 if recovery_rate > max_recovery:
                     max_recovery = recovery_rate
                     best_move = move
-            print(f"[RAM-LEARN] Đang lép vế ({int(avg_score)}). Đã ép chọn nước giảm âm tốt nhất: {best_move}")
+            print(f"[RAM-LEARN] Đang lép vế ({int(avg_score)}). Ép chọn nước phòng thủ tốt nhất: {best_move}")
         else:
-            # THẾ MẠNH (ĐIỂM DƯƠNG): Chọn nhánh bứt phá điểm số nhanh và mạnh nhất
+            # THẾ MẠNH (ĐIỂM DƯƠNG): Chọn nhánh có tốc độ bứt phá điểm cao nhất
             max_growth = -999999
             for move, data in self.pv_ram_cache.items():
                 growth_rate = data["current_score"]
                 if growth_rate > max_growth:
                     max_growth = growth_rate
                     best_move = move
-            print(f"[RAM-LEARN] Đang ưu thế (+{int(avg_score)}). Đã ép chọn nước tăng điểm mạnh nhất: {best_move}")
+            print(f"[RAM-LEARN] Đang ưu thế (+{int(avg_score)}). Ép chọn nước tăng điểm tốt nhất: {best_move}")
 
         return best_move
 
@@ -302,10 +325,8 @@ class PikafishBot:
                             match = self._mate_regex.search(line_str)
                             if match:
                                 val = int(match.group(1))
-                                if val > 0:
-                                    self._mate_status = f"WIN_IN_{val}"
-                                elif val < 0:
-                                    self._mate_status = f"LOSE_IN_{abs(val)}"
+                                if val > 0: self._mate_status = f"WIN_IN_{val}"
+                                elif val < 0: self._mate_status = f"LOSE_IN_{abs(val)}"
                         
                         if line_str.startswith("bestmove"):
                             self._latest_bestmove = line_str
@@ -316,7 +337,7 @@ class PikafishBot:
             self._fsf_cmd("setoption name Threads value 4")
             self._fsf_cmd("setoption name Hash value 256")
             
-            # Khóa cứng MultiPV = 3 để dồn tài nguyên xử lý RAM phản xạ nhanh
+            # Khóa cứng MultiPV = 3 để RAM phản xạ mượt và nhanh hơn 5
             self._fsf_cmd("setoption name MultiPV value 3")
             
             time.sleep(1)
@@ -331,7 +352,7 @@ class PikafishBot:
                 self._fsf_cmd("setoption name UseNNUE value false")
             self._fsf_cmd("isready")
             self.engine = True
-            print(f"[ENGINE] ✅ Đã kích hoạt chế độ RAM Trend-Learning ở MultiPV=3.")
+            print(f"[ENGINE] ✅ Sẵn sàng hoạt động với MultiPV=3 nâng cấp bộ não chống ngáo sát cục.")
         except Exception as e:
             print(f"[ENGINE] ❌ Lỗi khởi tạo: {e}")
 
@@ -350,8 +371,8 @@ class PikafishBot:
             if moves: pos_cmd += " moves " + " ".join(moves)
             self._fsf_cmd(pos_cmd)
             
-            # ÉP TỐC ĐỘ: Bỏ qua go depth chậm chạp, chỉ cho phép Engine quét RAM trong 1200 mili-giây
-            self._fsf_cmd("go movetime 2200") 
+            # ÉP THỜI GIAN: Cho Engine chạy đúng 1.2 giây để lấy đủ dữ liệu chuỗi PV
+            self._fsf_cmd("go movetime 3200") 
             return self._read_bestmove()
         except Exception as e: print(f"[ENGINE] Lỗi tính toán: {e}")
         return None
@@ -372,7 +393,7 @@ class PikafishBot:
                 if self._latest_bestmove:
                     return self._latest_bestmove
                 break
-            time.sleep(0.02) # Phản xạ vòng lặp RAM siêu tốc
+            time.sleep(0.02) # Phản xạ luồng đọc siêu tốc
         return None
 
     def _get_move_avoiding_fixed(self, fen, moves, fixed_positions):
@@ -723,33 +744,25 @@ class PikafishBot:
         if len(parts) < 2: return
         best_move = parts[1]
 
-        # ÁP DỤNG BỘ LỌC XU HƯỚNG DỮ LIỆU TRÊN RAM DO BẠN PHÁT HIỆN
+        # ÁP DỤNG BỘ LỌC TỐI ƯU XU HƯỚNG/SÁT CỤC TỪ RAM
         trend_move = self.trend_analyzer.select_best_trend_move()
         if trend_move and best_move not in ["(none)", "0000"]:
-            print(f"[RAM-LEARN] 🧠 Thay thế '{best_move}' bằng nước tối ưu xu hướng chuỗi: '{trend_move}'")
+            print(f"[RAM-LEARN] 🧠 Thay thế '{best_move}' bằng nước đi tối ưu: '{trend_move}'")
             best_move = trend_move
 
         # XỬ LÝ KỊCH BẢN KHI HẾT NƯỚC ĐI CỜ TÀN
         if best_move in ["(none)", "0000"]:
-            print("\n[HỆ THỐNG TÀN CUỘC] ⚠️ Pikafish báo: bestmove (none) - Không có nước đi.")
-            if self._mate_status and self._mate_status.startswith("LOSE_"):
-                print(f"-> Thua cuộc: Rơi vào thế sát cục tuyệt vọng ({self._mate_status}).")
-            else:
-                print("-> Hòa cuộc: Thế cờ hết nước đi hợp lệ (Stalemate).")
+            print("\n[HỆ THỐNG TÀN CUỘC] ⚠️ Pikafish báo: bestmove (none) - Hết nước hợp lệ.")
             self.board.is_my_turn = False
             return
 
-        # PHÁT HIỆN SÁT CỤC DƯƠNG
-        if self._mate_status and self._mate_status.startswith("WIN_"):
-            print(f"\n[ƯU THẾ] 🔥 Cơ hội dứt điểm: Phát hiện nước cờ sát cục sau {self._mate_status.split('_')[-1]} nước!")
-
-        # Gửi nước đi hợp lệ lên GameVH
+        # Gửi nước đi hợp lệ lên hệ thống GameVH
         if best_move:
             try:
                 source_pos, target_pos = self.board.engine_move_to_pos(best_move)
-                time.sleep(0.3)  # Độ trễ nhỏ mô phỏng người chơi thật bấm chuột
+                time.sleep(0.3)  # Giả lập thao tác chuột nhẹ nhàng
                 if self.board.is_my_turn and self.board.is_playing:
-                    print(f"-> Hành động: Gửi nước đi hợp lệ: {best_move}")
+                    print(f"-> Hành động: Xuất quân: {best_move}")
                     self.send_play(source_pos, target_pos)
             except Exception as e: print(f"[BOT ERROR] Dịch tọa độ lỗi: {e}")
 
