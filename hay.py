@@ -524,7 +524,7 @@ class PikafishBot:
         data.extend(self.conn.pack_byte(target_pos))
         self.send_message("PLAY", bytes(data))
 
-    def send_ready(self, is_ready=1):
+    def send_ready(self, is_ready=1000):
         if self.board.is_playing or self._ready_sent: return
         self._ready_sent = True 
         print("[GAME] ⏳ Gửi trạng thái READY (Chỉ gửi duy nhất 1 lần)...")
