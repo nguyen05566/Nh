@@ -1,0 +1,40 @@
+name: Run 77.py
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: run-77
+  cancel-in-progress: true
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: python -m pip install --requirement requirements.txt
+
+      - name: Build Pikafish
+        run: |
+          git clone --depth 1 --branch Pikafish-2026-01-02 \
+            https://github.com/official-pikafish/Pikafish.git /tmp/Pikafish
+          make -C /tmp/Pikafish/src -j"$(nproc)" build ARCH=x86-64-avx2
+          cp /tmp/Pikafish/src/pikafish ./pikafish
+          chmod +x ./pikafish
+
+      - name: Run 77.py
+        run: python -u 77.py
