@@ -28,13 +28,21 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install --requirement requirements.txt
 
-      - name: Build Pikafish
+      - name: Download Pikafish
         run: |
-          git clone --depth 1 --branch Pikafish-2026-01-02 \
-            https://github.com/official-pikafish/Pikafish.git /tmp/Pikafish
-          make -C /tmp/Pikafish/src -j"$(nproc)" build ARCH=x86-64-avx2
-          cp /tmp/Pikafish/src/pikafish ./pikafish
-          chmod +x ./pikafish
+          sudo apt-get update
+          sudo apt-get install --yes p7zip-full
+          curl --fail --location --retry 3 \
+            --output /tmp/pikafish.7z \
+            https://github.com/official-pikafish/Pikafish/releases/download/Pikafish-2026-01-02/Pikafish.2026-01-02.7z
+          echo "84257063905615919fb4ee6a70273a94843bb6ec04c45e3ac706098838bc1a49  /tmp/pikafish.7z" | sha256sum --check
+          7z x /tmp/pikafish.7z -o/tmp/pikafish -y
+          engine_path="$(find /tmp/pikafish -type f -path '*/Linux/pikafish-avx2' -print -quit)"
+          test -n "$engine_path"
+          install --mode=755 "$engine_path" ./pikafish
+          curl --fail --location --retry 3 \
+            --output ./pikafish.nnue \
+            https://github.com/official-pikafish/Networks/releases/download/master-net/pikafish.nnue
 
       - name: Run 77.py
         run: python -u 77.py
